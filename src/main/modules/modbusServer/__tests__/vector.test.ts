@@ -369,8 +369,9 @@ describe('a multi-write is all of its addresses or none', () => {
     ])
   })
 
-  // The handler refuses a zero-length FC1, FC3, FC4 or FC15 itself and calls
-  // no accessor, so the vector neither answers nor records one.
+  // The handler refuses a zero-length FC1, FC2, FC3, FC4 or FC15 itself and
+  // calls no accessor, so the vector is never reached and records nothing.
+  // docs/mcp.md says so: the log holds requests that reach the registers.
   it.each([
     [
       'FC1',
@@ -381,6 +382,17 @@ describe('a multi-write is all of its addresses or none', () => {
           1,
           callback,
           1
+        )
+    ],
+    [
+      'FC2',
+      (callback: HandlerCallback) =>
+        handlers.readCoilsOrInputDiscretes(
+          frame(1, 2, [0, 0, 0, 0]),
+          vectorOn('tcp'),
+          1,
+          callback,
+          2
         )
     ],
     [
@@ -398,16 +410,19 @@ describe('a multi-write is all of its addresses or none', () => {
       (callback: HandlerCallback) =>
         handlers.forceMultipleCoils(frame(1, 15, [0, 0, 0, 0, 0]), vectorOn('tcp'), 1, callback)
     ]
-  ])("answers a zero-length %s once, with the handler's exception 2", async (_name, handle) => {
-    hostRegister('1', 0, 0)
-    const replies: (number | 'ok')[] = []
+  ])(
+    'answers a zero-length %s once with exception 2 and deliberately records nothing',
+    async (_name, handle) => {
+      hostRegister('1', 0, 0)
+      const replies: (number | 'ok')[] = []
 
-    handle((err) => replies.push(err ? (err.modbusErrorCode ?? SERVER_DEVICE_FAILURE) : 'ok'))
-    await answered()
+      handle((err) => replies.push(err ? (err.modbusErrorCode ?? SERVER_DEVICE_FAILURE) : 'ok'))
+      await answered()
 
-    expect(replies).toEqual([ILLEGAL_DATA_ADDRESS])
-    expect(requests()).toEqual([])
-  })
+      expect(replies).toEqual([ILLEGAL_DATA_ADDRESS])
+      expect(requests()).toEqual([])
+    }
+  )
 
   it('writes every register of an FC16, tells the view of each, and records the values', async () => {
     hostRegister('1', 0, 0)

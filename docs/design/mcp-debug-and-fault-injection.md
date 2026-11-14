@@ -68,10 +68,11 @@
 1. **記錄與判斷的單位是一個請求，不是一次 accessor 呼叫。** register 的讀取改用 `getMultipleHoldingRegisters` 與 `getMultipleInputRegisters`，FC16 改用 `setRegisterArray`，vector 一次看到整個請求。coil 與 discrete input 的讀取沒有這種 accessor，FC15 的 `setCoilArray` 不能用（見現況），所以這三種照舊逐位址呼叫 `getCoil`、`getDiscreteInput`、`setCoil`：同一個請求的呼叫在同一段同步執行內，兩個 frame 各自經過一次 `setTimeout`，所以收集到這段同步執行結束再一起回答。
 2. **多筆寫入因此是整筆成立或整筆不成立。** 現在 FC16 寫到一半遇到錯誤時，前面的位址已經寫入。改成先檢查整個請求，通過才寫。FC16 與 FC15 都是。
 3. **一筆的內容：** `timestamp`、Server 的 `uuid`、`unitId`、`direction`（`read` 或 `write`）、`registerType`、`address`（第一個位址）、`count`、`outcome`（`ok`、`exception` 加 code、`no_response`）、選填的 `fault`。寫入另外記寫進來的值。`fault` 在 B 只定義形狀，由 C 填入：生效的是第幾條規則，以及延遲的毫秒數。有它，注入的 exception 才和 Server 自己回的分得開，延遲的請求也不會只記成 `ok`。
-4. **每台 Server 保留最近的紀錄，有上限。** Server 刪除時一併清掉。不存檔。
-5. **`server_get_requests`。** `readOnlyHint`。參數：`uuid`（省略時用主 Server）、`limit`（預設 50）、`sinceTimestamp`、`failedOnly`。
-6. **`McpToolContext.server` 的 `Pick` 加上讀紀錄的方法。**
-7. **測試。** 多 word 讀取是一筆、多 bit 讀取合成一筆、三種 `outcome`、RTU broadcast 寫入、被拒絕的多筆寫入一個位址都沒寫進去；一條 e2e：Client 讀 Server，`server_get_requests` 回那一筆。
+4. **紀錄在 vector，只有到達 Server 暫存器的請求。** modbus-serial 在 vector 之前自己處理的請求不記，故障規則也不套用：FC1、FC2、FC3、FC4、FC15 數量為 0（exception 2）、不支援的 function code（exception 1）、長度不符的 frame 與 RTU 的 CRC 錯誤（不回應）。要記它們得在 library 之下解析 frame，「記在哪一層」已選擇不做。FC16 數量為 0 會呼叫 vector，照常記錄。
+5. **每台 Server 保留最近的紀錄，有上限。** Server 刪除時一併清掉。不存檔。
+6. **`server_get_requests`。** `readOnlyHint`。參數：`uuid`（省略時用主 Server）、`limit`（預設 50）、`sinceTimestamp`、`failedOnly`。
+7. **`McpToolContext.server` 的 `Pick` 加上讀紀錄的方法。**
+8. **測試。** 多 word 讀取是一筆、多 bit 讀取合成一筆、三種 `outcome`、RTU broadcast 寫入、被拒絕的多筆寫入一個位址都沒寫進去；一條 e2e：Client 讀 Server，`server_get_requests` 回那一筆。
 
 ### C. 故障注入
 

@@ -75,6 +75,11 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 - 每筆有 `timestamp`、`uuid`、`unitId`、`direction`（`read` 或 `write`）、`registerType`、`address`（第一個 PDU 位址）、`count`、`outcome`（`ok`、`exception` 加 `exceptionCode`、`no_response`），寫入另有 `values`。由故障規則決定的請求另有 `fault`：`rule` 是規則在清單裡的位置（從 0 起算），`delay` 規則另有 `delayMs`。
 - 每台 Server 在 main 的記憶體保留最近的紀錄，上限寫在 tool 說明裡。刪除 Server 時清掉，不存檔。
 - RTU 的 unit 0 是 broadcast：讀取不回應，記為 `no_response`；寫入寫進每個有資料的 unit、不回應，記為 `ok`。超過位址 65535 的 broadcast 寫入一個位址都不寫，記為 `no_response`。
+- 紀錄只有到達 Server 暫存器的請求。modbus-serial 自己處理掉的請求不記，故障規則也不套用，因為 vector 沒有被呼叫。依 `servertcp_handler.js`、`servertcp.js` 與 `serverserial.js`：
+  - FC1、FC2、FC3、FC4、FC15 的數量為 0：回 exception 2，沒有紀錄。FC16 數量為 0 會呼叫 vector，記為 exception 2。
+  - 不支援的 function code：回 exception 1，沒有紀錄。
+  - FC1 到 FC6 的 frame 長度不是 8 位元組，FC15 與 FC16 的長度與數量不符：不回應，沒有紀錄。
+  - RTU 的 CRC 錯誤：不回應，沒有紀錄。
 - 不存在的 `uuid` 回空清單。這個 tool 不經過 renderer，所以 Server 畫面拆到另一個視窗時也能用。
 
 ## 故障注入
