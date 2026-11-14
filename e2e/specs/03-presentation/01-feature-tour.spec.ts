@@ -409,7 +409,7 @@ test.describe.serial('Act II — Building the Simulator', () => {
     await expect(mainPage.getByTestId('server-faults-rule-1')).toBeVisible()
     await beat(mainPage, 300)
 
-    const dialog = mainPage.getByTestId('server-faults-dialog').locator('.MuiDialog-paper')
+    const dialog = paperOf(mainPage, 'server-faults-add-btn')
     await dialog.screenshot({ path: resolve(SHOTS, 'server-fault-rules.png') })
 
     await mainPage.getByTestId('server-faults-clear-all-btn').click()
@@ -1028,9 +1028,9 @@ test.describe.serial('Act V — Side by Side', () => {
     await beat(mainPage, 300)
 
     await mainPage.evaluate(() => {
-      const stdioCmd = document.querySelector('[data-testid="mcp-stdio-command"]')
-      if (stdioCmd) {
-        stdioCmd.textContent =
+      const stdioCommand = document.querySelector('[data-testid="mcp-stdio-command"]')
+      if (stdioCommand) {
+        stdioCommand.textContent =
           'ELECTRON_RUN_AS_NODE=1 /Applications/Modbux.app/Contents/MacOS/Modbux /Applications/Modbux.app/Contents/Resources/app.asar/out/main/mcpStdio.js'
       }
       const stdioClaude = document.querySelector('[data-testid="mcp-stdio-claude-command"]')

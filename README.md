@@ -31,7 +31,9 @@ Do not build from source.
      shown on the same MCP page ("Any client that starts a stdio server") and register
      it. It reads the token from mcp.json by itself.
 5. Check it: call the tool server_list. An error that starts with "Modbux endpoint:"
-   means Modbux is not running or MCP is not enabled.
+   means the stdio bridge could not use Modbux's HTTP endpoint; the text after it is
+   the reason. A refused connection means Modbux is not running or MCP is not enabled;
+   401 means the token is wrong.
 6. Tell me what I can ask you now. The MCP prompts take a pasted point table:
    point_table_to_client reads the device, point_table_to_simulator builds a simulated
    server, closed_loop_test checks both against each other. Scanning unit IDs and
@@ -64,7 +66,7 @@ Do not build from source.
 
 **Client 模式：**
 
-- 讀寫所有常見資料型別：int16/32/64、uint16/32/64、float、double、bitmap、時間戳記（`UNIX` 與 IEC 870-5 `DATETIME`）與 UTF-8 字串
+- 解碼所有常見資料型別：int16/32/64、uint16/32/64、float、double、bitmap、時間戳記（`UNIX` 與 IEC 870-5 `DATETIME`）與 UTF-8 字串；UTF-8 只能讀取，寫入對話框不寫入 UTF-8
 - Bitmap 明細面板：可展開檢視 16 個位元，支援逐位元切換、燈號顏色設定、反相（Invert）與行內註解
 - Advanced mode（進階模式）：同時顯示所有數值資料型別的解碼結果
 - `Read configuration` 模式：僅讀取已設定的暫存器，自動合併分組、顯示群組索引欄位（`G`）與行內錯誤訊息
@@ -102,12 +104,13 @@ Do not build from source.
 **MCP 伺服器：**
 
 - 內建 Model Context Protocol (MCP) 伺服器，監聽 `http://127.0.0.1:15502/mcp`（Streamable HTTP + Bearer token）並提供 `stdio` 轉接器（`out/main/mcpStdio.js`）
-- 提供 21 項工具、7 項資源與 4 組提示詞範本，讓 AI 代理程式操控 Client 與 Server
+- 提供 29 項工具、7 項資源與 4 組提示詞範本，讓 AI 代理程式操控 Client 與 Server
 - 具備寫入保護開關（Settings 中的 `Allow writes to devices` 開關）
 
 **狀態自動保存（State Persistence）：**
 
-- 所有畫面狀態與設定會在關閉與重啟之間自動保存
+- Client 與 Server 的設定（連線、讀取設定、點位對應表、伺服器與暫存器）在關閉與重啟之間自動保存
+- 連線與輪詢狀態、讀到的數值、通訊紀錄、故障規則與 Undo 歷史不保存，詳見[使用手冊第 7 章](docs/manual/README.md#7-狀態持久化與復原persistence--undoredo)
 
 ## 工具比較
 
@@ -245,7 +248,7 @@ yarn test:all:windows
 yarn test:all:linux
 ```
 
-包含 lint、型別檢查、單元測試、兩種 E2E 模式、畫面截圖與掃描效能測試，以及該平台專屬測試：macOS 與 Linux 的硬體測試，以及 Linux 的連接埠 502 對話框測試（唯一需要人工互動的步驟）。推送程式碼前可執行較快速的 `yarn verify`：包含 lint、型別檢查、單元測試與 E2E 測試。
+包含 lint、型別檢查、單元測試、兩種 E2E 模式、畫面截圖與掃描效能測試，以及硬體測試（三個平台皆執行，未接開發板時自動略過）；Linux 另含連接埠 502 對話框測試（唯一需要人工互動的步驟）。推送程式碼前可執行較快速的 `yarn verify`：包含 lint、型別檢查、單元測試與 E2E 測試。
 
 **針對打包後的建置執行 E2E 測試：**
 

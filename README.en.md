@@ -31,7 +31,9 @@ Do not build from source.
      shown on the same MCP page ("Any client that starts a stdio server") and register
      it. It reads the token from mcp.json by itself.
 5. Check it: call the tool server_list. An error that starts with "Modbux endpoint:"
-   means Modbux is not running or MCP is not enabled.
+   means the stdio bridge could not use Modbux's HTTP endpoint; the text after it is
+   the reason. A refused connection means Modbux is not running or MCP is not enabled;
+   401 means the token is wrong.
 6. Tell me what I can ask you now. The MCP prompts take a pasted point table:
    point_table_to_client reads the device, point_table_to_simulator builds a simulated
    server, closed_loop_test checks both against each other. Scanning unit IDs and
@@ -66,7 +68,7 @@ and an `.AppImage`, x64 and arm64.
 
 **Client Mode:**
 
-- Read/write every common data type: int16/32/64, uint16/32/64, float, double, bitmap, timestamps (`UNIX` and IEC 870-5 `DATETIME`) and UTF-8 strings
+- Decode every common data type: int16/32/64, uint16/32/64, float, double, bitmap, timestamps (`UNIX` and IEC 870-5 `DATETIME`) and UTF-8 strings; UTF-8 is read-only, the write dialog does not write it
 - Bitmap detail panel: expandable 16-bit view with per-bit toggles, color coding, invert, and inline comments
 - Advanced mode: see all numeric data type interpretations simultaneously
 - `Read configuration` mode: efficiently read only configured registers with automatic grouping, group index column, and inline error rows
@@ -105,12 +107,13 @@ and an `.AppImage`, x64 and arm64.
 **MCP Server:**
 
 - Built-in Model Context Protocol (MCP) server on `http://127.0.0.1:15502/mcp` (Streamable HTTP with Bearer token) and `stdio` bridge (`out/main/mcpStdio.js`)
-- 21 tools, 7 resources, and 4 prompts for driving the client and the server from an AI agent
+- 29 tools, 7 resources, and 4 prompts for driving the client and the server from an AI agent
 - Write protection gate (`Allow writes to devices` switch in Settings)
 
 **State Persistence:**
 
-- Everything saves automatically between sessions
+- Client and server configuration (connection, read settings, register mapping, servers and their registers) saves automatically between sessions
+- Connection and polling state, read values, the transaction log, fault rules and undo history do not; see chapter 7 of the [user manual](docs/manual/README.md)
 
 ## How It Compares
 
@@ -268,8 +271,8 @@ yarn test:all:linux
 ```
 
 Lint, typecheck, unit tests, both e2e modes, the screenshots and the scan
-measurement, plus what only that platform has: the hardware specs on macOS and
-Linux, and the port 502 modal on Linux, which is the one step that waits for a
+measurement, and the hardware specs on every platform (they skip without a
+board). Linux adds the port 502 modal, which is the one step that waits for a
 person. `yarn verify` is the shorter one to run before pushing: lint, typecheck,
 unit tests and e2e.
 

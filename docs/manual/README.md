@@ -14,7 +14,7 @@
    - [3.3 暫存器表格（Register Grid）](#33-暫存器表格register-grid)
    - [3.4 資料型別、位元組順序與工程值換算](#34-資料型別位元組順序與工程值換算)
    - [3.5 BITMAP 位元面板與燈號設定](#35-bitmap-位元面板與燈號設定)
-   - [3.6 Read Configuration 模式与自動分組](#36-read-configuration-模式與自動分組)
+   - [3.6 Read Configuration 模式與自動分組](#36-read-configuration-模式與自動分組)
    - [3.7 寫入操作（Write Coils / Holding Registers）](#37-寫入操作write-coils--holding-registers)
    - [3.8 掃描工具（Scan Unit ID's / Scan Registers）](#38-掃描工具scan-unit-ids--scan-registers)
    - [3.9 通訊紀錄（Transactions）](#39-通訊紀錄transactions)
@@ -38,18 +38,18 @@
 
 ## 1. 安裝與啟動
 
-### 系統需求与安裝方式
+### 系統需求與安裝方式
 
 | 作業系統 | 安裝套件 | 最低需求與啟動方式 |
 | --- | --- | --- |
-| **Windows** | `Modbux-<version>-setup.exe` | Windows 10/11 (x64)。執行安裝程式；若出現 Windows SmartScreen 提示，點擊 **More info → Run anyway**。 |
-| **macOS** | `Modbux-<version>.dmg` | macOS 12+（Apple Silicon `arm64` 或 Intel `x64`）。將 `Modbux.app` 拖曳至 `/Applications`，首次啟動前於終端機執行 `xattr -cr /Applications/Modbux.app`。 |
-| **Linux (`.deb`)** | `modbux_<version>_amd64.deb` / `arm64.deb` | 執行 `sudo apt install ./modbux_<version>_amd64.deb`，再執行 `modbux`。 |
-| **Linux (`.AppImage`)** | `Modbux-<version>-x86_64.AppImage` | 執行 `chmod +x Modbux-<version>-x86_64.AppImage && ./Modbux-<version>-x86_64.AppImage`。 |
+| **Windows** | `modbux-<version>-x64-setup.exe` | Windows 10/11 (x64)。執行安裝程式；若出現 Windows SmartScreen 提示，點擊 **More info → Run anyway**。 |
+| **macOS** | `modbux-<version>-arm64.dmg` / `modbux-<version>-x64.dmg` | macOS 12+（Apple Silicon 選 `arm64`，Intel 選 `x64`）。將 `Modbux.app` 拖曳至 `/Applications`，首次啟動前於終端機執行 `xattr -cr /Applications/Modbux.app`。 |
+| **Linux (`.deb`)** | `modbux_<version>_amd64.deb` / `modbux_<version>_arm64.deb` | 執行 `sudo apt install ./modbux_<version>_amd64.deb`，再執行 `modbux`。 |
+| **Linux (`.AppImage`)** | `modbux-<version>-<arch>.AppImage` | 執行 `chmod +x modbux-<version>-<arch>.AppImage && ./modbux-<version>-<arch>.AppImage`。 |
 
 ### 從原始碼啟動
 
-1. 安裝 Node.js 20+ 與 Yarn 1.x。
+1. 安裝 Node.js LTS，並執行 `corepack enable`。專案在 `package.json` 的 `packageManager` 指定 Yarn 4.10.3，Corepack 會自動使用該版本。
 2. 於專案根目錄執行 `yarn install`。
 3. 執行 `yarn dev` 啟動開發視窗，或執行 `yarn build` 編譯主行程（`out/main`）、Preload（`out/preload`）與前端（`out/renderer`）。
 
@@ -72,24 +72,24 @@ Modbux 啟動時會向作業系統請求單一實例鎖定：
 
 ![首頁畫面](./images/home.png)
 
-| UI 元件 | `data-testid` | 功能說明 |
-| --- | --- | --- |
-| **Server** | `select-server-btn` | 進入主視窗內的 Server 模式。 |
-| **Client** | `select-client-btn` | 進入主視窗內的 Client 模式。 |
-| **獨立視窗按鈕**（`Server` 右側圖示） | `open-server-window-btn` | 開啟獨立的 `Server` 視窗（預設 `1400 × 920`），並將主視窗自動切換至 Client 模式。 |
-| **Save project** | `save-project-btn` | 將目前 Client 設定與所有 Server 設定匯出為單一 `modbux_project.json` 檔案。獨立 `Server` 視窗開啟期間停用。 |
-| **Open project** | `open-project-btn` | 載入專案檔（`.json`），取代目前 Client 與所有 Server 設定。Client 連線中或獨立 `Server` 視窗開啟期間若連線參數變更則拒絕載入。 |
-| **Settings**（右上角齒輪圖示） | `home-settings-btn` | 進入系統設定頁面（MCP server 設定）。 |
+| UI 元件 | 功能說明 |
+| --- | --- |
+| **Server** | 進入主視窗內的 Server 模式。 |
+| **Client** | 進入主視窗內的 Client 模式。 |
+| **獨立視窗按鈕**（`Server` 右側圖示） | 開啟獨立的 `Server` 視窗（預設 `1400 × 920`），並將主視窗自動切換至 Client 模式。 |
+| **Save project** | 將目前 Client 設定與所有 Server 設定匯出為單一 `modbux_project.json` 檔案。獨立 `Server` 視窗開啟期間停用。 |
+| **Open project** | 載入專案檔（`.json`），取代目前 Client 與所有 Server 設定。Client 連線中或獨立 `Server` 視窗開啟期間若連線參數變更則拒絕載入。 |
+| **Settings**（右上角齒輪圖示） | 進入系統設定頁面（MCP server 設定）。 |
 
 ### 雙視窗並排模式（Split Mode）
 
-可從首頁點擊 `Server` 右側的獨立視窗按鈕，或在主視窗的 Server 工具列最右側點擊 **Open server in separate window**（`split-server-btn`）進入並排模式：
+可從首頁點擊 `Server` 右側的獨立視窗按鈕，或在主視窗的 Server 工具列最右側點擊 **Open server in separate window**進入並排模式：
 
 | 主視窗（Client） | 獨立視窗（Server） |
 | :---: | :---: |
 | ![並排模式 — Client](./images/split-view-client.png) | ![並排模式 — Server](./images/split-view-server.png) |
 
-- 獨立 `Server` 視窗開啟期間，主視窗固定顯示 Client 畫面，且左上角返回首頁按鈕（`home-btn`）會自動隱藏。
+- 獨立 `Server` 視窗開啟期間，主視窗固定顯示 Client 畫面，且左上角返回首頁按鈕會自動隱藏。
 - 關閉獨立 `Server` 視窗後，主視窗會重新載入 Server 狀態並恢復返回首頁按鈕。
 - 關閉主視窗時，獨立 `Server` 視窗會一併關閉。
 
@@ -109,33 +109,33 @@ Client 頂部第一列為連線設定列。連線狀態非 `disconnected` 時，
 
 #### 通訊協定切換與 TCP 設定
 
-| 欄位 / 按鈕 | `data-testid` | 範圍 / 選項 | 預設值 | 說明 |
-| --- | --- | --- | --- | --- |
-| **TCP / RTU** | `protocol-tcp-btn` / `protocol-rtu-btn` | `ModbusTcp`（或 `ModbusRtuOverTcp`）、`ModbusRtu` | `TCP` | 切換乙太網路或序列埠傳輸。勾選齒輪選單的 **RTU over TCP** 時，**TCP** 按鈕會轉為橘色（warning 色）以提示目前為封裝 RTU 模式。 |
-| **Host** | `tcp-host-input` | IPv4 位址或主機名稱（不可空白） | `127.0.0.1` | 目標 Modbus TCP 伺服器或閘道器位址。空白時欄位標紅且 **Connect** 按鈕停用。 |
-| **Port** | `tcp-port-input` | `0`–`65535` | `502` | 目標 TCP 連接埠。 |
-| **Connect / Disconnect / Cancel** | `connect-btn` | — | `Connect` | 未連線時顯示 `Connect`；連線建立中顯示橘色 `Cancel`（點擊立即中止連線嘗試）；已連線時顯示紅色外框 `Disconnect`。 |
-| **Unit ID** | `unit-id-input` | `0`–`255` | `1` | 目標從站 Unit ID。連線中可隨時修改；非輪詢狀態下修改 Unit ID 會清除表格舊資料（若開啟 `Read configuration` 則重新讀取新 Unit ID 的點位）。 |
+| 欄位 / 按鈕 | 範圍 / 選項 | 預設值 | 說明 |
+| --- | --- | --- | --- |
+| **TCP / RTU** | `ModbusTcp`（或 `ModbusRtuOverTcp`）、`ModbusRtu` | `TCP` | 切換乙太網路或序列埠傳輸。勾選齒輪選單的 **RTU over TCP** 時，**TCP** 按鈕會轉為橘色（warning 色）以提示目前為封裝 RTU 模式。 |
+| **Host** | IPv4 位址或主機名稱（不可空白） | `192.168.1.10`（連線本機 Server 時改填 `127.0.0.1`） | 目標 Modbus TCP 伺服器或閘道器位址。空白時欄位標紅且 **Connect** 按鈕停用。 |
+| **Port** | `0`–`65535` | `502` | 目標 TCP 連接埠。 |
+| **Connect / Disconnect / Cancel** | — | `Connect` | 未連線時顯示 `Connect`；連線建立中顯示橘色 `Cancel`（點擊立即中止連線嘗試）；已連線時顯示紅色外框 `Disconnect`。 |
+| **Unit ID** | `0`–`255` | `1` | 目標從站 Unit ID。連線中可隨時修改；非輪詢狀態下修改 Unit ID 會清除表格舊資料（若開啟 `Read configuration` 則重新讀取新 Unit ID 的點位）。 |
 
 #### RTU 序列埠設定
 
-點擊 **RTU**（`protocol-rtu-btn`）後，連線列切換為序列埠參數：
+點擊 **RTU**後，連線列切換為序列埠參數：
 
 ![Client RTU 連線設定列](./images/client-rtu-config.png)
 
-| 欄位 / 按鈕 | `data-testid` | 選項 / 範圍 | 預設值 | 說明 |
-| --- | --- | --- | --- | --- |
-| **COM Port** | `rtu-com-input` | 自動偵測清單或手動輸入路徑（如 `COM3`、`/dev/ttyUSB0`） | 空字串 | 下拉選單顯示系統偵測到的序列埠路徑與製造商名稱。空白時標紅並停用 **Connect**。 |
-| **Refresh COM ports** | `rtu-refresh-btn` | — | — | 重新掃描系統序列埠清單。 |
-| **Validate COM port** | `rtu-validate-btn` | — | — | 測試開啟再關閉目前選取的序列埠，並於右下角彈出成功或錯誤訊息。 |
-| **Baud Rate** | `rtu-baudrate-select` | `1200`, `2400`, `4800`, `9600`, `14400`, `19200`, `38400`, `57600`, `115200` | `9600` | 序列埠鮑率（bps）。 |
-| **Parity** | `rtu-parity-select` | `none`, `even`, `odd`, `mark`, `space` | `none` | 同位元檢查。 |
-| **Data** | `rtu-databits-select` | `5`, `6`, `7`, `8` | `8` | 資料位元數。 |
-| **Stop** | `rtu-stopbits-select` | `1`, `2` | `1` | 停止位元數。 |
+| 欄位 / 按鈕 | 選項 / 範圍 | 預設值 | 說明 |
+| --- | --- | --- | --- |
+| **COM Port** | 自動偵測清單或手動輸入路徑（如 `COM3`、`/dev/ttyUSB0`） | `COM3` | 下拉選單顯示系統偵測到的序列埠路徑與製造商名稱。空白時標紅並停用 **Connect**。 |
+| **Refresh COM ports** | — | — | 重新掃描系統序列埠清單。 |
+| **Validate COM port** | — | — | 測試開啟再關閉目前選取的序列埠，並於右下角彈出成功或錯誤訊息。 |
+| **Baud Rate** | `1200`, `2400`, `4800`, `9600`, `14400`, `19200`, `38400`, `57600`, `115200` | `9600` | 序列埠鮑率（bps）。 |
+| **Parity** | `none`, `even`, `odd`, `mark`, `space` | `none` | 同位元檢查。 |
+| **Data** | `5`, `6`, `7`, `8` | `8` | 資料位元數。 |
+| **Stop** | `1`, `2` | `1` | 停止位元數。 |
 
 #### RTU over TCP（透明閘道器模式）
 
-在未連線狀態下，點擊第二列右側齒輪按鈕（`menu-btn`）並勾選 **RTU over TCP**（`rtu-over-tcp-checkbox`）：
+在未連線狀態下，點擊第二列右側齒輪按鈕並勾選 **RTU over TCP**：
 
 ![齒輪選單 — RTU over TCP](./images/cog-menu-rtu-over-tcp.png)
 
@@ -156,15 +156,15 @@ Client 頂部第一列為連線設定列。連線狀態非 `disconnected` 時，
 
 Client 頂部第二列左側為讀取與輪詢設定列：
 
-| 欄位 / 按鈕 | `data-testid` | 選項 / 範圍 | 預設值 | 說明 |
-| --- | --- | --- | --- | --- |
-| **Register Type** | `reg-type-select` | `Coils`, `Discrete Inputs`, `Input Registers`, `Holding Registers` | `Holding Registers` | 選擇讀取的暫存器類型（分別對應 FC01、FC02、FC04、FC03）。 |
-| **Address** | `reg-address-input` | `0`–`65535` | `0` | 讀取起始 PDU 位址（永遠為 0-based）。開啟 **Read configuration** 時停用。 |
-| **位址基底 `0` / `1`** | `address-base-0-btn` / `address-base-1-btn` | `0`, `1` | `0` | 切換表格 **Addr.** 欄位的顯示基底：`0` 顯示 PDU 位址，`1` 顯示 `PDU 位址 + 1`。不影響實際送出的封包位址。 |
-| **Length** | `reg-length-input` | Coils / Discrete Inputs：`1`–`2000`<br>Input / Holding Registers：`1`–`125` | `10` | 單次讀取數量。切換暫存器類型時若超出上限會自動裁切；開啟 **Read configuration** 時停用。 |
-| **Read** | `read-btn` | — | — | 執行單次讀取。未連線或正在輪詢/掃描時停用。 |
-| **Poll** | `poll-btn` | — | — | 啟動或停止連續輪詢。輪詢期間按鈕顯示呼吸燈動畫。 |
-| **Time settings**（時鐘圖示） | `poll-config-btn` | `Poll Rate`：`1000`–`10000` ms（步進 500 ms）<br>`Timeout`：`1000`–`10000` ms（步進 500 ms） | `Poll Rate`: `1000` ms（1s）<br>`Timeout`: `5000` ms（5s） | 點擊開啟滑桿視窗，調整輪詢間隔與請求逾時時間。按鈕文字即時顯示目前秒數（如 `1s`）。 |
+| 欄位 / 按鈕 | 選項 / 範圍 | 預設值 | 說明 |
+| --- | --- | --- | --- |
+| **Register Type** | `Coils`, `Discrete Inputs`, `Input Registers`, `Holding Registers` | `Holding Registers` | 選擇讀取的暫存器類型（分別對應 FC01、FC02、FC04、FC03）。 |
+| **Address** | `0`–`65535`（基底 `1` 時為 `1`–`65536`） | `0` | 讀取起始位址，依位址基底顯示與輸入。開啟 **Read configuration** 時停用。 |
+| **位址基底 `0` / `1`**（Address 欄位內） | `0`, `1` | `0` | 切換位址的顯示與輸入基底：`0` 為 PDU 位址，`1` 為 `PDU 位址 + 1`。工具列 **Address**、掃描工具的 **Address** 與表格 **Addr.** 欄位一起切換。送出的 PDU 位址不變。 |
+| **Length** | Coils / Discrete Inputs：`1`–`2000`<br>Input / Holding Registers：`1`–`125` | `10` | 單次讀取數量。切換暫存器類型時若超出上限會自動裁切；開啟 **Read configuration** 時停用。 |
+| **Read** | — | — | 執行單次讀取。未連線或正在輪詢/掃描時停用。 |
+| **Poll** | — | — | 啟動或停止連續輪詢。輪詢期間按鈕顯示呼吸燈動畫。 |
+| **Time settings**（時鐘圖示） | `Poll Rate`：`1000`–`10000` ms（步進 500 ms）<br>`Timeout`：`1000`–`10000` ms（步進 500 ms） | `Poll Rate`: `1000` ms（1s）<br>`Timeout`: `5000` ms（5s） | 點擊開啟滑桿視窗，調整輪詢間隔與請求逾時時間。按鈕文字即時顯示目前秒數（如 `1s`）。 |
 
 | 暫存器類型選單 | 輪詢與逾時時間設定 |
 | :---: | :---: |
@@ -176,7 +176,7 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 
 ### 3.3 暫存器表格（Register Grid）
 
-暫存器表格根據目前選擇的 **Register Type**、**Advanced mode** 與 **Show 64 bit values** 動態顯示欄位。
+暫存器表格根據目前選擇的 **Register Type**、**Advanced mode** 與 **Show 64 bit values** 動態顯示欄位。後兩者在齒輪選單（More options）中勾選，見[第 5 章](#5-齒輪選單與系統設定settings)；**Show 64 bit values** 需先勾選 **Advanced mode** 才能勾選。
 
 ![已解碼的暫存器表格](./images/client-decoded-values.png)
 
@@ -190,7 +190,7 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 | **Data Type** | `dataType` | `Input Registers` 或 `Holding Registers` | 125 px | 點擊兩下（或聚焦時按空白鍵 / Enter / 下方向鍵）開啟下拉選單，設定該位址的資料型別。未設定時顯示 `—`。 |
 | **Value** | `value` | `Input Registers` 或 `Holding Registers` | 170 px | 顯示依 **Data Type**、位元組順序、**Scale** 與線性內插計算後的工程值。若選擇 `BITMAP` 則顯示展開按鈕與亮起的位元圓點；若該群組讀取失敗則以紅字顯示 `⚠ <錯誤訊息>`。 |
 | **Scale** | `scalingFactor` | `Input Registers` 或 `Holding Registers` | 70 px | 雙擊編輯數值縮放係數（預設視為 `1`）。僅對數值型別（`INT16`、`UINT16`、`INT32`、`UINT32`、`INT64`、`UINT64`、`FLOAT`、`DOUBLE`）生效。 |
-| **Σ**（Interpolation） | `interpolation` | `Input Registers` 或 `Holding Registers` | 38 px | 點擊 `Σ` 圖示（`interp-btn-<addr>`）開啟兩點線性內插設定視窗。已設定內插時圖示呈主色高亮。 |
+| **Σ**（Interpolation） | `interpolation` | `Input Registers` 或 `Holding Registers` | 38 px | 點擊 `Σ` 圖示開啟兩點線性內插設定視窗。已設定內插時圖示呈主色高亮。 |
 | **End** | `groupEnd` | `Input Registers` 或 `Holding Registers` | 50 px | 勾選後強制在該暫存器結尾處切斷 **Read configuration** 的讀取區塊，使下一個點位另起一筆 Modbus 請求。 |
 | **HEX** | `hex` | `Input Registers` 或 `Holding Registers` | 70 px | 該位址 16-bit word 的 4 位十六進位字串（如 `0183`）。 |
 | **BIN** | `bin` | `Input Registers` 或 `Holding Registers` | 160 px | 該位址 16-bit word 的 16 位元二進位表示，每 4 bits 分組顯示。 |
@@ -203,15 +203,15 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 | **UINT64** | `uint64` | 同時開啟 **Advanced mode** 與 **Show 64 bit values** | 175 px | 即時預覽從該位址起 4 個暫存器解碼為 `UINT64` 的值。 |
 | **DOUBLE** | `double` | 同時開啟 **Advanced mode** 與 **Show 64 bit values** | 120 px | 即時預覽從該位址起 4 個暫存器解碼為 `DOUBLE` 的值。 |
 | **Comment** | `comment` | 永遠顯示 | 彈性填滿 | 雙擊輸入該點位的文字註解。 |
-| **寫入欄**（鉛筆圖示） | `actions` | `Coils` 或 `Holding Registers` | 40 px | 點擊鉛筆按鈕（`write-action-<addr>`）開啟寫入對話框。未連線或正在輪詢時停用。 |
+| **寫入欄**（鉛筆圖示） | `actions` | `Coils` 或 `Holding Registers` | 40 px | 點擊鉛筆按鈕開啟寫入對話框。未連線或正在輪詢時停用。 |
 
 ![Advanced mode 與 64-bit 預覽欄](./images/client-advanced-mode.png)
 
 #### 欄位篩選與工具列操作
 
-- 點擊任一欄位標題右側的選單按鈕並選擇 **Filter**，可依條件篩選顯示列；啟用篩選期間，工具列會出現橘色垃圾桶按鈕 **Clear filters**（`clear-filters-btn`），點擊即可一鍵清除所有篩選條件。
+- 點擊任一欄位標題右側的選單按鈕並選擇 **Filter**，可依條件篩選顯示列；啟用篩選期間，工具列會出現橘色垃圾桶按鈕 **Clear filters**，點擊即可一鍵清除所有篩選條件。
 - 表格右下角顯示最近一筆交易的完成時間（`HH:mm:ss.SSS`，滑鼠懸停提示 `Last transaction time`）。
-- 工具列右側的垃圾桶按鈕 **Clear**（`clear-btn`）會清空目前表格中的讀取資料（不刪除點位對應設定）。
+- 工具列右側的垃圾桶按鈕 **Clear**會清空目前表格中的讀取資料（不刪除點位對應設定）。
 
 | 欄位篩選器 | 一鍵清除篩選（Clear filters） |
 | :---: | :---: |
@@ -242,9 +242,9 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 
 #### 四種位元組順序（Byte Order：`ABCD` / `CDAB` / `BADC` / `DCBA`）
 
-點擊第二列工具列的位元組順序按鈕（`endian-toggle-btn`）開啟選單與對照表：
+第二列工具列有 **ABCD**、**CDAB**、**BADC**、**DCBA** 四顆切換按鈕，點擊其中一顆即切換位元組順序。滑鼠在按鈕上停留 1 秒會顯示對照表。暫存器類型為 Coils 或 Discrete Inputs 時，這組按鈕隱藏。
 
-![位元組順序選單與對照表](./images/client-endian-table.png)
+![位元組順序切換按鈕與對照表](./images/client-endian-table.png)
 
 | 代號 | 名稱 | `littleEndian`（Word Swap） | `byteSwap`（Byte Swap） | 32-bit `0x12345678`（Reg 0, Reg 1） | 64-bit `0x0102030405060708`（Reg 0..3） |
 | --- | --- | --- | --- | --- | --- |
@@ -266,33 +266,33 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 3. **套用兩點線性內插**（若有設定 `x1`, `x2`, `y1`, `y2` 且 $x_1 \neq x_2$）：
    $$v_{\text{eng}} = y_1 + \frac{(v_{\text{scaled}} - x_1) \times (y_2 - y_1)}{x_2 - x_1}$$
 
-點擊表格 `Σ` 欄位的按鈕（`interp-btn-<addr>`）可開啟 **Linear Interpolation** 設定視窗：
+點擊表格 `Σ` 欄位的按鈕可開啟 **Linear Interpolation** 設定視窗：
 
 ![線性內插設定視窗](./images/client-interpolation.png)
 
 - 四個參數 `x1`、`x2`、`y1`、`y2` 皆填寫完畢後，內插公式立即生效；任一欄留空則不套用內插。
-- 點擊工具列上的 **RAW** 按鈕（`raw-toggle-btn`）可暫時略過所有 `Scale` 與線性內插，在 `Value` 欄直接顯示未縮放的原始解碼值。
+- 點擊工具列上的 **RAW** 按鈕可暫時略過所有 `Scale` 與線性內插，在 `Value` 欄直接顯示未縮放的原始解碼值。
 
 ---
 
 ### 3.5 BITMAP 位元面板與燈號設定
 
-將暫存器的 `Data Type` 設為 `BITMAP` 後，`Value` 欄會顯示展開箭頭（`bitmap-expand-<addr>`）與 16 個位元的濃縮圓點預覽。點擊展開箭頭會在表格下方開啟 16 位元（`00`–`15`）明細面板：
+將暫存器的 `Data Type` 設為 `BITMAP` 後，`Value` 欄會顯示展開箭頭與 16 個位元的濃縮圓點預覽。點擊展開箭頭會在表格下方開啟 16 位元（`00`–`15`）明細面板：
 
 ![Client BITMAP 位元明細面板](./images/client-bitmap.png)
 
-| 操作項目 | 測試選擇器 / 位置 | 行為說明 |
-| --- | --- | --- |
-| **檢視位元狀態** | `bit-item-0` 至 `bit-item-15` | 圓點亮起代表該位元在套用 `Invert` 後為 Active（預設 bit = `1` 為亮起，綠色）。未填寫註解且值為 `0` 的位元會半透明淡化顯示。 |
-| **點擊圓點直接寫入位元** | `bit-circle-0` 至 `bit-circle-15` | 當暫存器類型為 **Holding Registers**、Client 已連線且未在輪詢時，直接點擊任一位元圓點，Client 會將該位元反轉（XOR）並以 **FC06** 將更新後的 16-bit word 寫回設備。 |
-| **編輯位元註解** | 點擊位元右側文字（預設顯示 `...`） | 行內輸入位元說明文字，按 `Enter` 或點擊外部儲存，按 `Escape` 取消。 |
-| **位元燈號顏色與反相設定** | 滑鼠移至位元列右側點擊齒輪圖示（`bit-settings-btn-<i>`） | 開啟設定彈出視窗：<br>• **Invert**（`bit-invert-toggle-<i>`）：開啟後 bit = `0` 時亮燈、bit = `1` 時熄燈。<br>• **Color**：選擇亮燈顏色為綠色（`success`，預設）、橘色（`warning`）或紅色（`error`）。 |
+| 操作項目 | 行為說明 |
+| --- | --- |
+| **檢視位元狀態** | 圓點亮起代表該位元在套用 `Invert` 後為 Active（預設 bit = `1` 為亮起，綠色）。未填寫註解且值為 `0` 的位元會半透明淡化顯示。 |
+| **點擊圓點直接寫入位元** | 當暫存器類型為 **Holding Registers**、Client 已連線且未在輪詢時，直接點擊任一位元圓點，Client 會將該位元反轉（XOR）並以 **FC06** 將更新後的 16-bit word 寫回設備。 |
+| **編輯位元註解** | 點擊位元右側文字（預設顯示 `...`），行內輸入位元說明文字，按 `Enter` 或點擊外部儲存，按 `Escape` 取消。 |
+| **位元燈號顏色與反相設定** | 滑鼠移至位元列右側點擊齒輪圖示，開啟設定彈出視窗：<br>• **Invert**：開啟後 bit = `0` 時亮燈、bit = `1` 時熄燈。<br>• **Color**：選擇亮燈顏色為綠色（`success`，預設）、橘色（`warning`）或紅色（`error`）。 |
 
 ---
 
 ### 3.6 Read Configuration 模式與自動分組
 
-點擊表格工具列的 **Read configuration** 按鈕（`read-config-btn`）可切換至點位表讀取模式：
+點擊表格工具列的 **Read configuration** 按鈕可切換至點位表讀取模式：
 
 ![Read Configuration 模式](./images/client-read-config.png)
 
@@ -302,24 +302,25 @@ Client 頂部第二列左側為讀取與輪詢設定列：
   2. 若相鄰點位與目前區塊起點的總跨距不超過 **100 個暫存器**（`MAX_BLOCK_SIZE = 100`），且前一個點位未勾選 **End**（`groupEnd`），也非未指定長度的 `UTF-8`，則合併為同一個讀取區塊（共用同一個 **G** 群組編號與一次 Modbus 請求）。
   3. 若點位勾選了 **End**，或跨距超過 100 個暫存器，則從下一個點位起建立新的讀取區塊。
 - **單一區塊錯誤隔離**：若某個讀取區塊回傳 Modbus 例外或逾時，僅該區塊內的點位會在 `Value` 欄顯示紅色錯誤訊息 `⚠ <錯誤>`，其餘區塊仍正常顯示讀取到的數值。
-- 對於 `Coils` 與 `Discrete Inputs`（無 `Data Type` 欄位），開啟 **Read configuration** 時僅保留已在映射表中建立註解或紀錄的位址；若該類型無任何映射項目，則退回讀取工具列 **Address** 與 **Length** 指定的範圍。
+- 自動分組只用於 `Input Registers` 與 `Holding Registers`。`Coils` 與 `Discrete Inputs` 開啟 **Read configuration** 時，仍讀取工具列 **Address** 與 **Length** 指定的範圍。若數值暫存器類型沒有任何已設定 `Data Type` 的位址，也改讀工具列範圍。
 
 ---
 
 ### 3.7 寫入操作（Write Coils / Holding Registers）
 
-當暫存器類型為 **Coils** 或 **Holding Registers**、Client 已連線且未在輪詢時，點擊列尾的鉛筆按鈕（`write-action-<addr>`）開啟寫入對話框。
+當暫存器類型為 **Coils** 或 **Holding Registers**、Client 已連線且未在輪詢時，點擊列尾的鉛筆按鈕開啟寫入對話框。
 
 #### 寫入 Holding Registers（FC06 / FC16）
 
 ![寫入 Holding Register 對話框](./images/client-write-register.png)
 
-- 開啟寫入對話框時，若工具列的 **RAW** 模式為關閉，系統會自動切換開啟 **RAW**（關閉對話框或手動點擊可切回）。
-- 在對話框中關閉 **RAW**（預設為關閉，即 Scaled 工程值模式）時，輸入的 **Value** 會先除以該位址設定的 `Scale`（並反算線性內插）再編碼為 16-bit words；開啟對話框內的 **RAW** 則直接將輸入值視為原始數值編碼。
-- **Function Code 選擇**：
-  - **06 - Write Single Register**（`write-fc6-btn`）：僅在目標位址的 `Data Type` 為 16-bit 整數（`INT16`、`UINT16` 或未設定）時可用。
-  - **16 - Write Multiple Registers**（`write-fc16-btn`，預設選取）：適用於所有數值型別（含 32-bit 與 64-bit 型別，自動依目前位元組順序拆分為 2 或 4 個 words 寫入）。
-- 點擊 **Submit**（`write-submit-btn`）後，Client 會送出寫入請求，並在寫入完成後自動讀取一次以更新表格。
+- 開啟寫入對話框時，若工具列的 **RAW** 為關閉，Modbux 會將它開啟，讓表格顯示未縮放的原始值。關閉對話框不會關閉 **RAW**，需手動點擊工具列的 **RAW** 切回。
+- **Value 欄位輸入的是原始值。** 對話框不套用 `Scale` 也不反算線性內插：位址設定 `Scale = 0.1` 時，要寫入工程值 `12.3`，需輸入 `123`。MCP 工具 `client_write` 可帶入 `scalingFactor` 與內插參數，由工程值換算原始值後寫入，見[第 6.3 節](#63-mcp-toolsresources-與-prompts-一覽)。
+- 對話框依目前位元組順序將數值編碼為 1、2 或 4 個 words。`UTF-8` 不能寫入：選擇 `UTF-8` 送出時，Modbux 顯示 `Modbux cannot write a value as UTF-8` 並不送出請求。
+- 輸入 **Value** 後，點擊對話框右側的功能碼按鈕即立即送出，沒有另外的送出按鈕：
+  - **6**（FC6: Write single register）：僅在 `Data Type` 為 `INT16` 或 `UINT16` 時可用。
+  - **16**（FC16: Write multiple registers）：適用於所有可寫入的型別。
+- 寫入完成後，Client 自動讀取一次以更新表格。
 
 #### 寫入 Coils（FC05 / FC15）
 
@@ -327,32 +328,33 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 | :---: | :---: |
 | ![寫入單一 Coil (FC5)](./images/client-write-coil.png) | ![寫入多筆 Coils (FC15)](./images/client-write-coil-fc15.png) |
 
-- **05 - Write Single Coil**（`write-fc5-btn`，預設選取）：透過 **FALSE** / **TRUE** 切換該位址的狀態，點擊 **Submit** 送出 FC05。
-- **15 - Write Multiple Coils**（`write-fc15-btn`）：可設定寫入長度 **Length**（`1`–`1968`，且 `address + length <= 65536`），並在網格中逐一點擊切換每個位址（`write-coil-<addr>-select-btn`）的 `TRUE`（綠底）或 `FALSE`（紅底）狀態，點擊 **Submit** 一次送出 FC15。
+- 對話框以 **5** / **15** 切換功能碼，按鈕上顯示位址號碼的方塊代表各 Coil：實心（contained）為 `TRUE`，外框（outlined）為 `FALSE`，點擊切換。設定完成後點擊 **5** / **15** 右側的上傳圖示按鈕（Write coils）送出。
+- **5**（FC5）：只顯示並寫入所點的那一個 Coil。
+- **15**（FC15）：顯示並寫入從所點位址到讀取視窗（工具列 **Address** + **Length**）結尾的所有 Coils，沒有可設定的長度欄位。一次最多寫入 1968 個；超過時只寫前 1968 個，並顯示 `One request writes 1968 coils, so the last <N> were left alone`。
 
 ---
 
 ### 3.8 掃描工具（Scan Unit ID's / Scan Registers）
 
-點擊第二列工具列右側的齒輪按鈕 **More options**（`menu-btn`）可開啟掃描與測試選單：
+點擊第二列工具列右側的齒輪按鈕 **More options**可開啟掃描與測試選單：
 
 ![Client 齒輪選單](./images/cog-menu.png)
 
 #### Scan Unit ID's（掃描總線從站 ID）
 
-點擊 **Scan Unit ID's**（`scan-unitids-btn`）開啟從站掃描對話框：
+點擊 **Scan Unit ID's**開啟從站掃描對話框：
 
 ![Scan Unit ID's 對話框](./images/client-scan-unit-ids.png)
 
-| 欄位 / 按鈕 | `data-testid` | 範圍 / 選項 | 預設值 | 說明 |
-| --- | --- | --- | --- | --- |
-| **From Unit ID** | `scan-unitid-from-input` | `0`–`255` | `1` | 掃描起始 Unit ID。 |
-| **Count** | `scan-unitid-count-input` | `1`–`256`（`From + Count - 1 <= 255`） | `25` | 掃描的 Unit ID 數量。 |
-| **Address** | `scan-unitid-address-input` | `0`–`65535` | `0` | 對每個 Unit ID 試讀的起始 PDU 位址。 |
-| **Length** | `scan-unitid-length-input` | 依勾選的類型決定（Coils/DI 為 `2000`，Registers 為 `125`） | `2` | 每次試讀的長度。 |
-| **Timeout (ms)** | `scan-unitid-timeout-input` | 正整數（ms） | `200` | 單次請求逾時毫秒數。 |
-| **Register Types** | `scan-unitid-type-coils` / `discrete_inputs` / `input_registers` / `holding_registers` | 四種暫存器類型（至少勾選一項） | `Holding Registers` 與 `Input Registers` | 對每個 Unit ID 依序測試勾選的暫存器類型。 |
-| **Start Scanning / Stop Scanning** | `scan-unitid-start-stop-btn` | — | — | 開始或中途停止掃描。 |
+| 欄位 / 按鈕 | 範圍 / 選項 | 預設值 | 說明 |
+| --- | --- | --- | --- |
+| **Start Unit ID** | `0`–`255` | `0` | 掃描起始 Unit ID。 |
+| **Count** | `1`–`256`（超過 `255` 的部分不掃描） | `10` | 掃描的 Unit ID 數量。 |
+| **Address** | `0`–`65535` | `0` | 對每個 Unit ID 試讀的起始位址，依位址基底顯示。 |
+| **Length** | 上限依勾選的類型決定（含 Coils/DI 為 `2000`，只有 Registers 為 `125`） | `2` | 每次試讀的長度。 |
+| **Timeout (ms)** | `100`–`10000` ms | `500` | 單次請求逾時毫秒數。 |
+| **Register Types** | 四種暫存器類型（至少勾選一項） | `Holding Registers` | 對每個 Unit ID 依序測試勾選的暫存器類型。 |
+| **Start Scanning / Stop Scanning** | — | — | 開始或中途停止掃描。 |
 
 掃描結果表格針對每個已測試的 Unit ID 與暫存器類型顯示三種狀態標籤：
 
@@ -362,25 +364,25 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 
 #### Scan Registers / Scan TRUE Bits（掃描非零暫存器或 TRUE 位元）
 
-點擊齒輪選單的 **Scan Registers**（當類型為 `Coils` 或 `Discrete Inputs` 時按鈕名稱為 **Scan TRUE Bits**，`scan-registers-btn`）會在工具列上方展開掃描控制列：
+點擊齒輪選單的 **Scan Registers**（當類型為 `Coils` 或 `Discrete Inputs` 時按鈕名稱為 **Scan TRUE Bits**）會在工具列上方展開掃描控制列：
 
 ![暫存器掃描畫面](./images/client-scanning.png)
 
-| 欄位 / 按鈕 | `data-testid` | 範圍 / 預設值 | 說明 |
-| --- | --- | --- | --- |
-| **Unit ID** | `scan-unit-id-input` | `0`–`255`（同目前 Unit ID） | 掃描目標 Unit ID。 |
-| **Address** | `scan-address-input` | `0`–`65535`（預設 `0`） | 掃描起始 PDU 位址。 |
-| **Length** | `scan-length-input` | `1`–`65536`（預設 `1000`） | 掃描位址總數（`Address + Length <= 65536`）。 |
-| **Chunk Size** | `scan-chunk-input` | Coils/DI：`1`–`2000`<br>Registers：`1`–`125`（預設 `100`） | 單筆 Modbus 讀取請求涵蓋的位址數。 |
-| **Timeout** | `scan-timeout-input` | `1`–`10000` ms（預設 `500`） | 單筆請求逾時毫秒數。 |
-| **隱藏/顯示表格按鈕**（眼睛圖示） | `scan-show-grid-btn` | 預設開啟 | 掃描期間是否即時渲染下方表格；關閉可降低大量命中時的畫面更新負載。 |
-| **Start / Stop** | `scan-start-stop-btn` | — | 啟動或停止掃描。右側即時顯示目前已發現的非零暫存器或 `TRUE` 位元數量（`Found: N`）。 |
+| 欄位 / 按鈕 | 範圍 / 預設值 | 說明 |
+| --- | --- | --- |
+| **Unit ID** | `0`–`255`（同目前 Unit ID） | 掃描目標 Unit ID。 |
+| **Address** | `0`–`65535`（預設 `0`） | 掃描起始 PDU 位址。 |
+| **Length** | 預設 `10000`（`Address + Length <= 65536`） | 掃描位址總數。 |
+| **Chunk Size** | Coils/DI：`1`–`2000`<br>Registers：`1`–`125`（預設 `100`） | 單筆 Modbus 讀取請求涵蓋的位址數。 |
+| **Timeout** | `100`–`10000` ms（預設 `500`） | 單筆請求逾時毫秒數。 |
+| **隱藏/顯示表格按鈕**（眼睛圖示） | 預設開啟 | 掃描期間是否即時渲染下方表格；關閉可降低大量命中時的畫面更新負載。 |
+| **Start / Stop** | — | 啟動或停止掃描。右側即時顯示目前已發現的非零暫存器或 `TRUE` 位元數量（`Found: N`）。 |
 
 ---
 
 ### 3.9 通訊紀錄（Transactions）
 
-點擊工具列的 **Show Log**（展開後顯示為 **Hide Log**，`show-log-btn`）可切換至通訊紀錄表格：
+點擊工具列的 **Show Log**（展開後顯示為 **Hide Log**）可切換至通訊紀錄表格：
 
 ![Client 通訊紀錄表格](./images/client-transaction-log.png)
 
@@ -398,8 +400,8 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 | **Responses** | 250 px | 收到的原始回應封包十六進位字串（多筆時以逗號分隔）。 |
 | **Error** | 彈性填滿 | 逾時或 Modbus 例外訊息（正常時顯示 `-`）。 |
 
-- 點擊右上角 **Export**（`tx-export-btn`）可將目前所有通訊紀錄匯出為 `transactions_<ISO時間>.csv`（包含 `id`, `timestamp`, `unitId`, `address`, `code`, `durationMs`, `request`, `responses`, `error` 欄位）。
-- 點擊 **Clear**（`tx-clear-btn`）清空通訊紀錄。
+- 點擊 **Export** 會以表格內建的 CSV 匯出功能，將目前顯示的欄位匯出為 `transaction_log_<yyyyMMdd_HHmmss>.csv`；欄位與上表相同，套用中的篩選同樣生效。
+- 點擊 **Clear** 清空通訊紀錄。
 
 ---
 
@@ -407,12 +409,12 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 
 表格工具列最右側提供設定名稱與檔案管理按鈕：
 
-| 元件 | `data-testid` | 功能說明 |
-| --- | --- | --- |
-| **Client Configuration** 文字框 | `client-name-input` | 設定目前 Client 組態名稱（最多 32 字元），會一併寫入匯出的 JSON 檔名與內容。 |
-| **Save**（磁碟片圖示） | `save-client-config-btn` | 將目前 Client 名稱、連線設定（`connectionConfig`）、讀取設定（`registerConfig`，含位元組順序）與四種暫存器類型的點位對應表（`registerMapping`）匯出為 `.json` 檔案。 |
-| **Open**（資料夾圖示） | `load-client-config-btn` | 選擇並載入 Client JSON 設定檔（支援 v0、v1、v2、v3 格式自動遷移）。若 Client 處於連線中且檔案內的連線參數（協定、Host、Port、RTU 參數）與目前不同，系統會拒絕套用那些連線參數並彈出提示。 |
-| **Clear**（叉號圖示） | `clear-client-config-btn` | 彈出 **Clear Client Configuration** 確認對話框；點擊 **Clear**（`clear-client-confirm-btn`）會清空所有點位對應表與組態名稱，並關閉 **Read configuration**。 |
+| 元件 | 功能說明 |
+| --- | --- |
+| **Client Configuration** 文字框 | 設定目前 Client 組態名稱（最多 32 字元），會一併寫入匯出的 JSON 檔名與內容。 |
+| **Save**（磁碟片圖示） | 將目前 Client 名稱、連線設定（`connectionConfig`）、讀取設定（`registerConfig`，含位元組順序）與四種暫存器類型的點位對應表（`registerMapping`）匯出為 `.json` 檔案。 |
+| **Open**（資料夾圖示） | 選擇並載入 Client JSON 設定檔（支援 v0、v1、v2、v3 格式自動遷移）。若 Client 處於連線中且檔案內的連線參數（協定、Host、Port、RTU 參數）與目前不同，系統會拒絕套用那些連線參數並彈出提示。 |
+| **Clear**（叉號圖示） | 彈出 **Clear Client Configuration** 確認對話框；點擊 **Clear**會清空所有點位對應表與組態名稱，並關閉 **Read configuration**。 |
 
 ---
 
@@ -422,32 +424,30 @@ Client 頂部第二列左側為讀取與輪詢設定列：
 
 ### 4.1 TCP 與 RTU 伺服器設定、多伺服器實例與 Unit ID
 
-#### TCP 與 RTU 模式切換与多台 TCP 伺服器
+#### TCP 與 RTU 模式切換與多台 TCP 伺服器
 
-Server 頂部工具列可切換 **TCP**（`server-mode-tcp-btn`）與 **RTU**（`server-mode-rtu-btn`）模式：
+Server 頂部工具列可切換 **TCP**與 **RTU**模式：
 
 - **TCP 模式（支援最多 10 台獨立伺服器）**：
   - 預設包含一台主伺服器（`MAIN_SERVER_UUID`，預設監聽 Port `502`，不可刪除）。
-  - 點擊左上角 `+` 按鈕（`add-server-btn`）可新增額外的 TCP 伺服器實例，最多同時執行 **10 台**（達到 10 台時 `+` 按鈕隱藏）。
+  - 點擊左上角 `+` 按鈕可新增額外的 TCP 伺服器實例，最多同時執行 **10 台**（達到 10 台時 `+` 按鈕隱藏）。
   - 新增伺服器時，系統會從 Port `502` 起尋找第一個未被其他 Server 佔用、且非 MCP 專用埠（`15502`）的可用連接埠自動綁定。
-  - 點擊伺服器按鈕（顯示連接埠號，如 `502`、`503`）可切換目前編輯的伺服器；選取非主伺服器時，右側會顯示紅色垃圾桶按鈕（`delete-server-btn`）可刪除該伺服器並釋放連接埠。
+  - 點擊伺服器按鈕（顯示連接埠號，如 `502`、`503`）可切換目前編輯的伺服器；選取非主伺服器時，右側會顯示紅色垃圾桶按鈕可刪除該伺服器並釋放連接埠。
 - **RTU 模式**：
   - 切換至 **RTU** 時，系統會停止所有 TCP 監聽器，並以主伺服器（`MAIN_SERVER_UUID`）的暫存器資料透過指定的序列埠提供服務。
-  - 工具列顯示 **COM Port**（`server-rtu-com-input`）、重新整理按鈕（`server-rtu-refresh-btn`）、USB 狀態指示燈（`server-rtu-status`，綠色 USB 圖示代表監聽中，點擊可重啟 RTU 伺服器）、**Baud Rate**、**Parity**、**Data** 與 **Stop**。
+  - 工具列顯示 **COM Port**、重新整理按鈕、USB 狀態指示燈（綠色 USB 圖示代表監聽中，點擊可重啟 RTU 伺服器）、**Baud Rate**、**Parity**、**Data** 與 **Stop**。
 
 #### Server 頂部設定欄
 
-| 欄位 / 按鈕 | `data-testid` | 範圍 / 選項 | 預設值 | 說明 |
-| --- | --- | --- | --- | --- |
-| **Save / Open / Clear** | `server-save-btn` / `server-open-btn` / `server-clear-btn` | — | — | 匯出、載入或清空目前選取伺服器的設定與所有 Unit ID 暫存器。 |
-| **Port**（僅 TCP 模式） | `server-port-input` | `502`–`10502`（UI 輸入遮罩範圍） | `502` | 修改目前 TCP 伺服器的監聽埠（輸入後離開焦點生效）。不可與其他伺服器重複，且不可使用 `15502`。 |
-| **Unit ID** | `server-unitid-select` | `0`–`255` | `0` | 切換目前檢視與編輯的 Unit ID 點位表。下拉選單中已設定任何點位的 Unit ID 會以主色高亮標示。 |
-| **Server Name** | `server-name-input` | 字串 | 空字串 | 目前伺服器的識別名稱。 |
-| **Byte Order** | `endian-toggle-btn` | `ABCD`, `CDAB`, `BADC`, `DCBA` | `ABCD` | 設定該伺服器編碼 32-bit 與 64-bit 暫存器時的位元組順序。切換時會立即重新編碼並同步所有 Unit ID 的暫存器。 |
-| **Fault rules** | `server-faults-indicator` | — | `Fault rules` | 開啟故障注入規則對話框。當該伺服器設有規則時，按鈕轉為橘色並顯示規則數量（如 `Fault rules (2)`）。 |
-| **Open server in separate window** | `split-server-btn` | — | — | 將 Server 獨立為第二視窗，主視窗切換為 Client。 |
-
-![Unit ID 下拉選單（高亮顯示含有資料的 Unit ID）](./images/server-unitid-dropdown.png)
+| 欄位 / 按鈕 | 範圍 / 選項 | 預設值 | 說明 |
+| --- | --- | --- | --- |
+| **Save / Open / Clear** | — | — | 匯出、載入或清空目前選取伺服器的設定與所有 Unit ID 暫存器。 |
+| **Port**（僅 TCP 模式） | `502`–`10502`（UI 輸入遮罩範圍） | `502` | 修改目前 TCP 伺服器的監聽埠（輸入後離開焦點生效）。不可與其他伺服器重複，且不可使用 `15502`。 |
+| **Unit ID** | `0`–`255` | `0` | 切換目前檢視與編輯的 Unit ID 點位表。下拉選單中已設定任何點位的 Unit ID 會以主色高亮標示。 |
+| **Server Name** | 字串 | 空字串 | 目前伺服器的識別名稱。 |
+| **Byte Order** | `ABCD`, `CDAB`, `BADC`, `DCBA` | `ABCD` | 設定該伺服器編碼 32-bit 與 64-bit 暫存器時的位元組順序。切換時會立即重新編碼並同步所有 Unit ID 的暫存器。 |
+| **Fault rules** | — | `Fault rules` | 開啟故障注入規則對話框。當該伺服器設有規則時，按鈕轉為橘色並顯示規則數量（如 `Fault rules (2)`）。 |
+| **Open server in separate window** | — | — | 將 Server 獨立為第二視窗，主視窗切換為 Client。 |
 
 #### 未設定 Unit ID 與 RTU 廣播（Unit ID 0）行為
 
@@ -467,16 +467,16 @@ Server 頂部工具列可切換 **TCP**（`server-mode-tcp-btn`）與 **RTU**（
 
 ![Server Coils 面板](./images/server-coils.png)
 
-1. **新增點位**：在清單底部的輸入框（`add-bool-address-input-coils` / `discrete_inputs`）輸入位址（`0`–`65535`）並按 `Enter` 或點擊 `+`（`add-bool-btn-coils`）。若輸入的位址已存在，會自動跳至下一個空閒位址並遞增預填值。
-2. **切換 ON / OFF**：點擊位址左側的圓點（`server-bool-coils-circle-<addr>`）即可在 `true`（綠燈發光）與 `false`（灰色）之間切換。
-3. **編輯註解**：點擊位址右側的 `...`（`server-bool-coils-comment-<addr>`）可直接輸入行內註解，按 `Enter` 儲存。
-4. **刪除單一點位或全部點位**：滑鼠移至該列右側點擊垃圾桶圖示（`remove-bool-coils-<addr>`）刪除單一點位；點擊面板標題列左側的垃圾桶圖示（`delete-coils-btn`）清空該 Unit ID 下所有 Coils 或 Discrete Inputs。
+1. **新增點位**：在清單底部的輸入框輸入位址（`0`–`65535`）並按 `Enter` 或點擊 `+`。若輸入的位址已存在，會自動跳至下一個空閒位址並遞增預填值。
+2. **切換 ON / OFF**：點擊位址左側的圓點即可在 `true`（綠燈發光）與 `false`（灰色）之間切換。
+3. **編輯註解**：點擊位址右側的 `...`可直接輸入行內註解，按 `Enter` 儲存。
+4. **刪除單一點位或全部點位**：滑鼠移至該列右側點擊垃圾桶圖示刪除單一點位；點擊面板標題列左側的垃圾桶圖示清空該 Unit ID 下所有 Coils 或 Discrete Inputs。
 
 ---
 
 ### 4.3 數值暫存器管理（Input Registers 與 Holding Registers）
 
-畫面右側兩個面板分別為 **Input Registers** 與 **Holding Registers**。點擊面板標題列右側的 `+` 按鈕（`add-input_registers-btn` / `add-holding_registers-btn`）開啟 **Add Input Register** / **Add Holding Register** 對話框；點擊既有暫存器列右側的鉛筆按鈕（`server-edit-reg-<type>-<addr>`）則開啟 **Edit** 對話框。
+畫面右側兩個面板分別為 **Input Registers** 與 **Holding Registers**。點擊面板標題列右側的 `+` 按鈕開啟 **Add Input Register** / **Add Holding Register** 對話框；點擊既有暫存器列右側的鉛筆按鈕則開啟 **Edit** 對話框。
 
 #### 固定值（Fixed）與隨機產生器（Generator）
 
@@ -484,18 +484,18 @@ Server 頂部工具列可切換 **TCP**（`server-mode-tcp-btn`）與 **RTU**（
 | :---: | :---: |
 | ![新增固定值暫存器](./images/add-register-uint16-fixed.png) | ![新增產生器暫存器](./images/add-register-float-generator.png) |
 
-| 欄位 / 按鈕 | `data-testid` | 顯示條件与範圍 | 說明 |
-| --- | --- | --- | --- |
-| **Fixed / Generator** | `add-reg-fixed-btn` / `add-reg-generator-btn` | 除 `UTF-8` 與 `BITMAP` 外皆顯示 | 選擇固定數值或定時動態更新。`UTF-8` 與 `BITMAP` 強制為 `Fixed`。 |
-| **Address** | `add-reg-address-input` | `0`–`65535` | 起始 PDU 位址。若與既有暫存器重疊會標紅並顯示 `In use`；若位址加上型別寬度超出 `65535` 則顯示 `Data type does not fit at this address`。 |
-| **Data Type** | `add-reg-type-select` | 12 種資料型別 | 選擇暫存器編碼型別。 |
-| **Value** | `add-reg-value-input` | 數值型別 + `Fixed` | 輸入符合該型別範圍的固定數值。 |
-| **Min Value / Max Value** | `add-reg-min-input` / `add-reg-max-input` | 數值型別 + `Generator` | 產生器隨機數值的下限與上限（含小數，針對整數型別會取整）。 |
-| **Interval (s)** | `add-reg-interval-input` | `Generator` 模式（`1`–`3600` 秒） | 產生器每隔幾秒更新一次數值。 |
-| **String Value / Registers** | `add-reg-string-input` / `add-reg-length-input` | `UTF-8` 型別（長度 `1`–`124`，預設 `10`） | 輸入字串內容與佔用的暫存器數量（每暫存器 2 bytes，下方即時顯示 `<目前已用> / <上限> bytes`）。 |
-| **Date & Time / UTC** | `add-reg-datetime-input` / `add-reg-datetime-show-utc` | `UNIX` 或 `DATETIME` + `Fixed` | 選擇固定時間；點擊 **UTC** 按鈕切換以本地時區或 UTC 顯示選擇器（底層暫存器永遠以 UTC 編碼）。 |
-| **Comment** | `add-reg-comment-input` | 任意文字 | 暫存器註解。 |
-| **Add & Close / Add & Next** | `add-reg-submit-btn` / `add-reg-next-btn` | 新增模式 | **Add & Close** 新增後關閉視窗；**Add & Next** 新增後保留型別設定並自動跳至下一個可用位址。編輯模式下顯示 **Submit Change** 與 **Remove**（`add-reg-remove-btn`，當表單未修改時可點擊刪除該暫存器）。 |
+| 欄位 / 按鈕 | 顯示條件與範圍 | 說明 |
+| --- | --- | --- |
+| **Fixed / Generator** | 除 `UTF-8` 與 `BITMAP` 外皆顯示 | 選擇固定數值或定時動態更新。`UTF-8` 與 `BITMAP` 強制為 `Fixed`。 |
+| **Address** | `0`–`65535` | 起始 PDU 位址。若與既有暫存器重疊會標紅並顯示 `In use`；若位址加上型別寬度超出 `65535` 則顯示 `Data type does not fit at this address`。 |
+| **Data Type** | 12 種資料型別 | 選擇暫存器編碼型別。 |
+| **Value** | 數值型別 + `Fixed` | 輸入符合該型別範圍的固定數值。 |
+| **Min Value / Max Value** | 數值型別 + `Generator` | 產生器隨機數值的下限與上限（含小數，針對整數型別會取整）。 |
+| **Interval (s)** | `Generator` 模式（`1`–`3600` 秒） | 產生器每隔幾秒更新一次數值。 |
+| **String Value / Registers** | `UTF-8` 型別（長度 `1`–`124`，預設 `10`） | 輸入字串內容與佔用的暫存器數量（每暫存器 2 bytes，下方即時顯示 `<目前已用> / <上限> bytes`）。 |
+| **Date & Time / UTC** | `UNIX` 或 `DATETIME` + `Fixed` | 選擇固定時間；點擊 **UTC** 按鈕切換以本地時區或 UTC 顯示選擇器（底層暫存器永遠以 UTC 編碼）。 |
+| **Comment** | 任意文字 | 暫存器註解。 |
+| **Add & Close / Add & Next** | 新增模式 | **Add & Close** 新增後關閉視窗；**Add & Next** 新增後保留型別設定並自動跳至下一個可用位址。編輯模式下顯示 **Submit Change** 與 **Remove**（當表單未修改時可點擊刪除該暫存器）。 |
 
 #### 字串（UTF-8）與時間（UNIX / DATETIME）設定畫面
 
@@ -511,7 +511,7 @@ Server 頂部工具列可切換 **TCP**（`server-mode-tcp-btn`）與 **RTU**（
 
 #### Server 端 BITMAP 展開編輯
 
-對於 `Data Type` 為 `BITMAP` 的暫存器，點擊該列位址旁的展開箭頭（`server-bitmap-expand-<addr>`）即可在 Server 面板內展開 `00`–`15` 共 16 個位元：
+對於 `Data Type` 為 `BITMAP` 的暫存器，點擊該列位址旁的展開箭頭即可在 Server 面板內展開 `00`–`15` 共 16 個位元：
 
 ![Server BITMAP 展開面板](./images/server-bitmap.png)
 
@@ -522,7 +522,7 @@ Server 頂部工具列可切換 **TCP**（`server-mode-tcp-btn`）與 **RTU**（
 
 ### 4.4 故障注入規則（Fault Rules）
 
-點擊 Server 頂部工具列的 **Fault rules** 按鈕（`server-faults-indicator`）可開啟故障注入規則管理對話框，模擬現場設備離線、忙碌、拒絕寫入或回應緩慢等異常情境：
+點擊 Server 頂部工具列的 **Fault rules** 按鈕可開啟故障注入規則管理對話框，模擬現場設備離線、忙碌、拒絕寫入或回應緩慢等異常情境：
 
 ![Server Fault rules 對話框](./images/server-fault-rules.png)
 
@@ -534,22 +534,22 @@ Server 頂部工具列可切換 **TCP**（`server-mode-tcp-btn`）與 **RTU**（
 
 #### 規則欄位說明
 
-| 類別 | 欄位名稱 | `data-testid` | 範圍 / 選項 | 說明 |
-| --- | --- | --- | --- | --- |
-| **匹配條件** | **Unit ID** | `fault-form-unit-id` | `0`–`255`（留空代表任意 Unit ID） | 限制僅比對特定 Unit ID。 |
-| **匹配條件** | **Register type** | `fault-form-register-type` | `Any`, `coils`, `discrete_inputs`, `input_registers`, `holding_registers` | 限制比對特定暫存器類型。 |
-| **匹配條件** | **Direction** | `fault-form-direction` | `Any`, `Read`, `Write` | 限制比對讀取或寫入請求。 |
-| **匹配條件** | **Address from / Address to** | `fault-form-address-start` / `fault-form-address-end` | `0`–`65535`（兩端皆包含；留空代表任意位址） | 只要請求涵蓋的位址範圍與 `[from, to]` 有任何交集即視為符合。兩欄須同時填寫或同時留空，且 `from <= to`。 |
-| **故障動作** | **Exception** | `fault-form-action-exception` + `fault-form-code` | 例外碼 `1`–`255`（預設 `6` Server Device Busy） | 回傳指定的 Modbus 例外碼；若是寫入請求，**不會**寫入任何數值。 |
-| **故障動作** | **No response** | `fault-form-action-no-response` | — | 完全不回傳封包（讓主站逾時）；若是寫入請求，**不會**寫入任何數值。 |
-| **故障動作** | **Delay** | `fault-form-action-delay` + `fault-form-ms` | `1`–`30000` ms（預設 `500` ms） | 請求到達當下照常讀寫暫存器，但將回應封包延遲指定毫秒數後才送出。清除或修改規則不會取消已在等待送出的延遲回應（停止或刪除伺服器才會取消）。 |
-| **觸發控制** | **Every Nth match** | `fault-form-every-nth` | 正整數（`>= 1`，留空代表每次符合皆觸發） | 每符合 N 次才觸發 1 次故障動作。 |
-| **觸發控制** | **For seconds** | `fault-form-for-seconds` | `1`–`86400` 秒（留空代表持續有效直到手動移除） | 規則儲存後經過指定秒數即自動從清單移除。清單列會顯示剩餘秒數（`<N> s left`）。 |
+| 類別 | 欄位名稱 | 範圍 / 選項 | 說明 |
+| --- | --- | --- | --- |
+| **匹配條件** | **Unit ID** | `0`–`255`（留空代表任意 Unit ID） | 限制僅比對特定 Unit ID。 |
+| **匹配條件** | **Register type** | `Any`, `coils`, `discrete_inputs`, `input_registers`, `holding_registers` | 限制比對特定暫存器類型。 |
+| **匹配條件** | **Direction** | `Any`, `Read`, `Write` | 限制比對讀取或寫入請求。 |
+| **匹配條件** | **Address from / Address to** | `0`–`65535`（兩端皆包含；留空代表任意位址） | 只要請求涵蓋的位址範圍與 `[from, to]` 有任何交集即視為符合。兩欄須同時填寫或同時留空，且 `from <= to`。 |
+| **故障動作** | **Exception** | 例外碼 `1`–`255`（預設 `6` Server Device Busy） | 回傳指定的 Modbus 例外碼；若是寫入請求，**不會**寫入任何數值。 |
+| **故障動作** | **No response** | — | 完全不回傳封包（讓主站逾時）；若是寫入請求，**不會**寫入任何數值。 |
+| **故障動作** | **Delay** | `1`–`30000` ms（預設 `500` ms） | 請求到達當下照常讀寫暫存器，但將回應封包延遲指定毫秒數後才送出。清除或修改規則不會取消已在等待送出的延遲回應（停止或刪除伺服器才會取消）。 |
+| **觸發控制** | **Every Nth match** | 正整數（`>= 1`，留空代表每次符合皆觸發） | 每符合 N 次才觸發 1 次故障動作。 |
+| **觸發控制** | **For seconds** | 大於 `0`、最多 `86400` 秒，可輸入小數（如 `0.5`；留空代表持續有效直到手動移除） | 規則儲存後經過指定秒數即自動從清單移除。清單列會顯示剩餘秒數（`<N> s left`）。 |
 
 #### 清單操作與生命週期
 
-- 每條規則列顯示 `triggered <觸發次數> / matched <符合次數>`；點擊對話框底部的 **Refresh**（`server-faults-refresh-btn`）可更新最新計數與剩餘秒數。
-- 可透過每列右側的上下箭頭（`Move up` / `Move down`）、鉛筆（`Edit`）與垃圾桶（`Delete`）調整順序、修改或刪除規則，或點擊 **Clear all**（`server-faults-clear-btn`）清空全部規則。
+- 每條規則列顯示 `triggered <觸發次數> / matched <符合次數>`；點擊對話框底部的 **Refresh**可更新最新計數與剩餘秒數。
+- 可透過每列右側的上下箭頭（`Move up` / `Move down`）、鉛筆（`Edit`）與垃圾桶（`Delete`）調整順序、修改或刪除規則，或點擊 **Clear all**清空全部規則。
 - **TCP 與 RTU 的差異**：在 RTU 模式下，針對該伺服器未託管（Un-hosted）之 Unit ID 的請求會直接靜默忽略，不會進入故障規則比對；RTU 廣播（Unit ID `0`）永遠不回傳封包，但若命中 `Exception` 或 `No response` 規則會阻止該筆廣播寫入。
 - **生命週期**：故障規則僅存於主行程記憶體中，不會寫入設定檔或 `localStorage`；重啟程式、刪除伺服器、對該伺服器執行 **Clear**、或載入 Server 設定檔 / 專案檔時皆會自動清除該伺服器的故障規則。
 
@@ -587,11 +587,11 @@ Server 頂部工具列可切換 **TCP**（`server-mode-tcp-btn`）與 **RTU**（
 
 Server 頂部工具列左側提供三個檔案管理按鈕：
 
-| 按鈕 | `data-testid` | 功能說明 |
-| --- | --- | --- |
-| **Save**（磁碟片圖示） | `server-save-btn` | 將目前選取伺服器的名稱、連接埠、位元組順序與所有 Unit ID（`0`–`255`）的暫存器匯出為 `.json` 檔案（格式版本 v4）。 |
-| **Open**（資料夾圖示） | `server-open-btn` | 載入 Server JSON 設定檔（支援 v0–v4 自動遷移）並取代目前選取伺服器的設定，同時清除該伺服器的故障規則。 |
-| **Clear**（叉號圖示） | `server-clear-btn` | 清空目前選取伺服器的所有 Unit ID 點位與故障規則，並將 Unit ID 切回 `0`。 |
+| 按鈕 | 功能說明 |
+| --- | --- |
+| **Save**（磁碟片圖示） | 將目前選取伺服器的名稱、連接埠、位元組順序與所有 Unit ID（`0`–`255`）的暫存器匯出為 `.json` 檔案（格式版本 v4）。 |
+| **Open**（資料夾圖示） | 載入 Server JSON 設定檔（支援 v0–v4 自動遷移）並取代目前選取伺服器的設定，同時清除該伺服器的故障規則。 |
+| **Clear**（叉號圖示） | 清空目前選取伺服器的所有 Unit ID 點位與故障規則，並將 Unit ID 切回 `0`。 |
 
 ---
 
@@ -599,31 +599,34 @@ Server 頂部工具列左側提供三個檔案管理按鈕：
 
 ### Client 齒輪選單（More options）
 
-在 Client 畫面點擊第二列右側齒輪按鈕（`menu-btn`）可執行五項操作：
+在 Client 畫面點擊第二列右側齒輪按鈕（More options）開啟選單，項目由上而下為：
 
-| 選單項目 | `data-testid` | 啟用條件 | 功能說明 |
-| --- | --- | --- | --- |
-| **Scan Unit ID's** | `scan-unitids-btn` | 已連線且未在輪詢/掃描 | 開啟 Unit ID 掃描對話框。 |
-| **Scan Registers** / **Scan TRUE Bits** | `scan-registers-btn` | 已連線且未在輪詢/掃描 | 展開非零暫存器或 `TRUE` 位元掃描工具列。 |
-| **Load Dummy Data** | `dummy-data-btn` | 未連線 | 在表格中填入 10 筆隨機測試資料，供離線測試資料型別解碼、縮放與篩選。 |
-| **Clear Filters** | `menu-clear-filters-btn` | 表格有啟用欄位篩選時 | 清除所有表格欄位篩選條件。 |
-| **RTU over TCP** | `rtu-over-tcp-checkbox` | 未連線且協定非純 RTU | 切換 `ModbusTcp` 與 `ModbusRtuOverTcp` 協定。 |
+| 選單項目 | 顯示 / 啟用條件 | 功能說明 |
+| --- | --- | --- |
+| **Advanced mode** | 暫存器類型為 Input / Holding Registers 時顯示 | 勾選後表格加入 `INT16`、`UINT16`、`INT32`、`UINT32`、`FLOAT` 預覽欄。 |
+| **Show 64 bit values** | 同上；須先勾選 **Advanced mode** | 勾選後表格再加入 `INT64`、`UINT64`、`DOUBLE` 預覽欄。 |
+| **RTU over TCP** | 未連線且協定非純 RTU | 切換 `ModbusTcp` 與 `ModbusRtuOverTcp` 協定。 |
+| **Scan Unit ID's** | 已連線且未在輪詢/掃描 | 開啟 Unit ID 掃描對話框。 |
+| **Scan Registers** / **Scan TRUE Bits** | 已連線且未在輪詢/掃描 | 展開非零暫存器或 `TRUE` 位元掃描工具列。 |
+| **Load Dummy Data** | 未連線 | 依工具列目前的 **Address** 與 **Length** 範圍，在表格中填入測試資料，供離線測試資料型別解碼、縮放與篩選。 |
+
+清除欄位篩選的 **Clear filters** 按鈕位於表格工具列，見[第 3.3 節](#33-暫存器表格register-grid)。
 
 ### 首頁系統設定（Settings — MCP server）
 
-從首頁右上角點擊齒輪按鈕 **Settings**（`home-settings-btn`）進入系統設定畫面：
+從首頁右上角點擊齒輪按鈕 **Settings**進入系統設定畫面：
 
 ![Settings — MCP server 設定畫面](./images/settings-mcp.png)
 
-| 設定項目 / 元件 | `data-testid` | 預設值 | 功能說明 |
-| --- | --- | --- | --- |
-| **Enable MCP** | `mcp-enabled-switch` | 關閉（`false`） | 啟用或停用內建的 MCP HTTP 伺服器（`127.0.0.1:15502`）。設定立即寫入 `<userData>/mcp.json`，下次啟動時自動依此狀態決定是否監聽。 |
-| **Allow writes to devices** | `mcp-allow-writes-switch` | 關閉（`false`） | 控制是否允許 MCP 的 `client_write` 工具向真實連線設備發送寫入指令（FC5/FC6/FC15/FC16）。關閉時呼叫 `client_write` 會回傳權限拒絕錯誤。修改本地 Server 模擬器數值不受此開關限制。 |
-| **Status** | `mcp-status` | `Stopped` | 顯示目前 MCP 伺服器狀態：`Stopped`、`Running` 或 `Error: <原因>`（例如連接埠 `15502` 被其他程式佔用）。 |
-| **URL** | `mcp-url` | `http://127.0.0.1:15502/mcp` | Streamable HTTP 端點位址，右側提供複製按鈕。 |
-| **Bearer token** 與 **Regenerate token** | `mcp-token` / `mcp-regenerate-token-btn` | 初次啟動隨機產生 43 字元 base64url 字串 | HTTP `Authorization: Bearer <token>` 驗證金鑰。點擊 **Regenerate token** 會立即產生新金鑰並使舊金鑰失效。 |
-| **Claude Code（HTTP 指令）** | `mcp-claude-command` | — | 顯示包含目前 Token 的 `claude mcp add --transport http modbux ...` 完整指令，可一鍵複製。 |
-| **Stdio — for clients that launch a command** | `mcp-stdio-claude-command` / `mcp-stdio-command` | — | 顯示透過 `out/main/mcpStdio.js` 轉接至本機 HTTP 端點的 `claude mcp add` 指令與通用執行指令。 |
+| 設定項目 / 元件 | 預設值 | 功能說明 |
+| --- | --- | --- |
+| **Enable MCP** | 關閉（`false`） | 啟用或停用內建的 MCP HTTP 伺服器（`127.0.0.1:15502`）。設定立即寫入 `<userData>/mcp.json`，下次啟動時自動依此狀態決定是否監聽。 |
+| **Allow writes to devices** | 關閉（`false`） | 控制是否允許 MCP 的 `client_write` 工具向真實連線設備發送寫入指令（FC5/FC6/FC15/FC16）。關閉時呼叫 `client_write` 會回傳權限拒絕錯誤。修改本地 Server 模擬器數值不受此開關限制。 |
+| **Status** | `Stopped` | 顯示目前 MCP 伺服器狀態：`Stopped`、`Running` 或 `Error: <原因>`（例如連接埠 `15502` 被其他程式佔用）。 |
+| **URL** | `http://127.0.0.1:15502/mcp` | Streamable HTTP 端點位址，右側提供複製按鈕。 |
+| **Bearer token** 與 **Regenerate token** | 初次啟動隨機產生 43 字元 base64url 字串 | HTTP `Authorization: Bearer <token>` 驗證金鑰。點擊 **Regenerate token** 會立即產生新金鑰並使舊金鑰失效。 |
+| **Claude Code（HTTP 指令）** | — | 顯示包含目前 Token 的 `claude mcp add --transport http modbux ...` 完整指令，可一鍵複製。 |
+| **Stdio — for clients that launch a command** | — | 顯示透過 `out/main/mcpStdio.js` 轉接至本機 HTTP 端點的 `claude mcp add` 指令與通用執行指令。 |
 
 ---
 
@@ -631,12 +634,12 @@ Server 頂部工具列左側提供三個檔案管理按鈕：
 
 ### 6.1 JSON 設定檔與專案檔結構
 
-Modbux 所有匯出檔案皆為 UTF-8 JSON 格式，且載入時皆經過 Zod Schema 驗證與舊版自動遷移（同時支援透過 MCP Resource `modbux://schema/*` 取得 Draft-07 JSON Schema）。
+Modbux 的設定檔與專案檔皆為 UTF-8 JSON 格式（通訊紀錄的匯出檔為 CSV，見第 3.9 節），且載入時皆經過 Zod Schema 驗證與舊版自動遷移（同時支援透過 MCP Resource `modbux://schema/*` 取得 Draft-07 JSON Schema）。
 
 | 檔案類型 | 最新 `version` | 關鍵頂層欄位 | 版本相容與遷移行為 |
 | --- | --- | --- | --- |
-| **Client 設定檔** | `3` | `version`, `modbuxVersion`, `name`, `connectionConfig`, `registerConfig`（含 `littleEndian`, `byteSwap`）, `registerMapping` | 自動相容無 `version`（v0）、`version: 1`、`version: 2` 舊檔；若檔案由更新版本的 Modbux 儲存（`version > 3`），仍會提取相容欄位並提示通知。 |
-| **Server 設定檔** | `4` | `version`, `modbuxVersion`, `name`, `port`, `littleEndian`, `byteSwap`, `registers`（依 Unit ID `'0'`–`'255'` 分層） | 自動相容 v0–v3 舊檔（例如將舊版布林陣列轉為 `{ value, comment }` 映射、補齊 `byteSwap` 與 `port`）。 |
+| **Client 設定檔** | `3` | `version`, `modbuxVersion`, `name`, `littleEndian`, `byteSwap`, `connectionConfig`, `registerConfig`（讀取設定，不含位元組順序）, `registerMapping` | 自動相容無 `version`（v0）、`version: 1`、`version: 2` 舊檔；若檔案由更新版本的 Modbux 儲存（`version > 3`），仍會提取相容欄位並提示通知。 |
+| **Server 設定檔** | `4` | `version`, `modbuxVersion`, `name`, `port`, `littleEndian`, `byteSwap`, `serverRegistersPerUnit`（依 Unit ID `'0'`–`'255'` 分層，只含有設定的 Unit ID） | 自動相容 v0–v3 舊檔（例如將舊版布林陣列轉為 `{ value, comment }` 映射、補齊 `byteSwap` 與 `port`）。 |
 | **Project 專案檔** (`modbux_project.json`) | `1` | `kind: "project"`, `version: 1`, `modbuxVersion`, `client`, `servers`（陣列，1–10 台）, `selectedServer`, `serverMode`, `serialConfig` | 載入時第 1 台 Server 放入主伺服器，其餘依序建立新 Server；若某連接埠無法綁定會於結果中回報並繼續載入其餘設定。 |
 
 ---
@@ -658,7 +661,7 @@ Modbux 所有匯出檔案皆為 UTF-8 JSON 格式，且載入時皆經過 Zod Sc
 
 ### 6.3 MCP Tools、Resources 與 Prompts 一覽
 
-#### MCP Tools（共 21 項）
+#### MCP Tools（共 29 項）
 
 | 分類 | 工具名稱 | 主要參數 | 功能說明 |
 | --- | --- | --- | --- |
@@ -670,7 +673,7 @@ Modbux 所有匯出檔案皆為 UTF-8 JSON 格式，且載入時皆經過 Zod Sc
 | **Client 讀寫與輪詢** | `client_start_polling` | 無 | 啟動 Client 連續輪詢（輪詢期間 `client_read_points` 會拒絕執行，須先停止輪詢）。 |
 | **Client 讀寫與輪詢** | `client_stop_polling` | 無 | 停止 Client 連續輪詢，並等待最後一筆在途讀取完成後才返回。 |
 | **Client 讀寫與輪詢** | `client_write` | `address`, `notation`, `registerType`, `coils` 或 `value`+`dataType` 或 `words`, `single` | 寫入 Coils 或 Holding Registers 並自動回讀（須在 Settings 開啟 **Allow writes to devices**）。 |
-| **Client 點位表与除錯** | `client_apply_point_table` | `points` (1–10000), `notation` (`pdu0`/`one_based`/`modicon`), `byteOrder`, `unitId`, `dryRun` | 將規格書點位表轉換並套用至 Client 映射表，自動開啟 `Read configuration`（支援 `dryRun: true` 預檢）。 |
+| **Client 點位表與除錯** | `client_apply_point_table` | `points` (1–10000), `notation` (`pdu0`/`one_based`/`modicon`), `byteOrder`, `unitId`, `dryRun` | 將規格書點位表轉換並套用至 Client 映射表，自動開啟 `Read configuration`（支援 `dryRun: true` 預檢）。 |
 | **Client 點位表與除錯** | `client_get_transactions` | `limit` (1–1000, 預設 50), `sinceTimestamp`, `failedOnly` | 調閱 Client 通訊紀錄（含原始請求/回應 hex、耗時 `durationMs`、逾時旗標與 `exceptionCode`）。 |
 | **Client 掃描** | `client_scan_registers` | `registerType`, `startAddress`, `count` (1–10000), `chunkSize` (預設 100), `timeoutMs` (100–5000, 預設 500) | 掃描位址範圍並回傳非零暫存器或 `TRUE` 位元（單次最長執行 120 秒，最多回傳 2000 筆命中列）。 |
 | **Client 掃描** | `client_scan_unit_ids` | `startUnitId`, `endUnitId`, `registerTypes`, `address`, `length`, `timeoutMs` | 掃描 Unit ID 範圍（單次請求總數上限 `1000`，最長 120 秒），回傳有資料回應與回傳例外的 Unit ID。 |
@@ -710,7 +713,7 @@ Modbux 所有匯出檔案皆為 UTF-8 JSON 格式，且載入時皆經過 Zod Sc
 
 | Prompt 名稱 | 參數 | 工作流程說明 |
 | --- | --- | --- |
-| `point_table_to_client` | `pointTable` | 將貼入的點位表文字透過 `dryRun` 驗證後載入 Client、連線讀取，並檢查多暫存器數值合理性以自動確認位元組順序与縮放係數。 |
+| `point_table_to_client` | `pointTable` | 將貼入的點位表文字透過 `dryRun` 驗證後載入 Client、連線讀取，並檢查多暫存器數值合理性以自動確認位元組順序與縮放係數。 |
 | `point_table_to_simulator` | `pointTable` | 依點位表建立新的 Modbux TCP Server 模擬器，自動配置固定值與合理的動態產生器範圍。 |
 | `closed_loop_test` | `pointTable` | 建立 Server 模擬器並將 Client 指向該 Server，執行閉迴路讀取比對所有點位。 |
 | `simulate_device_fault` | `situation` | 根據描述的異常情境（離線、忙碌、延遲、斷線、數值凍結或溢位）設定 `server_set_faults` 或 `server_set_values`，並透過 `server_get_requests` 驗證故障是否觸發。 |
