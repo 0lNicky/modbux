@@ -59,3 +59,11 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 
 - `client_scan_registers`：`startAddress`（PDU 位址）、`count`（1 到 10000）、`registerType`（省略時用 Client 目前的類型）、`chunkSize`（預設 100）、`timeoutMs`（100 到 5000，預設 500）。回傳非零的 word（或為 1 的 bit）。
 - `client_scan_unit_ids`：`startUnitId`、`endUnitId`、`registerTypes`（預設 `holding_registers`）、`address`（預設 0）、`length`（預設 1）、`timeoutMs`。unit id 數量乘以 register type 數量最多 1000。回傳有回應的 unit，回 Modbus exception 也算有回應。
+
+## Server 請求紀錄
+
+- `server_get_requests`：`readOnlyHint`。回傳主站對某台 Server 送出的請求，由舊到新，一個請求一筆，不論位址數量。參數：`uuid`（省略時用主 Server）、`limit`（預設 50）、`sinceTimestamp`（毫秒，含該時刻）、`failedOnly`（只回 exception 與沒回應的請求）。
+- 每筆有 `timestamp`、`uuid`、`unitId`、`direction`（`read` 或 `write`）、`registerType`、`address`（第一個 PDU 位址）、`count`、`outcome`（`ok`、`exception` 加 `exceptionCode`、`no_response`），寫入另有 `values`。
+- 每台 Server 在 main 的記憶體保留最近的紀錄，上限寫在 tool 說明裡。刪除 Server 時清掉，不存檔。
+- RTU 的 unit 0 是 broadcast：讀取不回應，記為 `no_response`；寫入寫進每個有資料的 unit、不回應，記為 `ok`。
+- 不存在的 `uuid` 回空清單。這個 tool 不經過 renderer，所以 Server 畫面拆到另一個視窗時也能用。

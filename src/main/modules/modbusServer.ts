@@ -14,6 +14,7 @@ import {
 } from '@shared'
 import { Windows } from '../windows'
 import { ServerRegistry } from './modbusServer/registry'
+import { ServerRequest, ServerRequestFilter, ServerRequestLog } from './modbusServer/requestLog'
 import { RtuServer } from './modbusServer/rtu'
 import { TcpServers } from './modbusServer/tcp'
 
@@ -22,17 +23,22 @@ interface ServerParams {
 }
 
 /**
- * The four parts of a Modbus server, and what one uuid means across them.
+ * The five parts of a Modbus server, and what one uuid means across them.
  *
  * `ServerRegistry` holds the registers, `TcpServers` holds the listeners,
- * `RtuServer` holds the serial port, and `createVector` is what the two
- * transports ask the registry through. Everything public here is what
- * `main/ipc.ts` calls, apart from `readRegisters`, which the MCP tools call; a method that names more than one part is one this
- * class answers itself, and the rest hand their parameters over.
+ * `RtuServer` holds the serial port, `createVector` is what the two transports
+ * ask the registry through, and `ServerRequestLog` holds what the vectors
+ * answered. Everything public here is what `main/ipc.ts` calls, apart from
+ * `readRegisters` and `getRequests`, which the MCP tools call; a method that
+ * names more than one part is one this class answers itself, and the rest hand
+ * their parameters over.
  */
 export class ModbusServer {
   /** What every server holds, keyed by uuid and then by unit id. */
   private _registry: ServerRegistry
+
+  /** The requests each uuid answered, which both transports' vectors record. */
+  private _requestLog: ServerRequestLog = new ServerRequestLog()
 
   /** The TCP listeners, one per uuid. */
   private _tcp: TcpServers
@@ -57,8 +63,8 @@ export class ModbusServer {
       windows,
       onUnitData: (uuid): void => this._rtu.warnBroadcastUnit(uuid)
     })
-    this._rtu = new RtuServer({ windows, registry: this._registry })
-    this._tcp = new TcpServers({ windows, registry: this._registry })
+    this._rtu = new RtuServer({ windows, registry: this._registry, requestLog: this._requestLog })
+    this._tcp = new TcpServers({ windows, registry: this._registry, requestLog: this._requestLog })
   }
 
   /**
@@ -76,6 +82,10 @@ export class ModbusServer {
       { length: count },
       (_, offset) => this._registry.read(uuid, unitId, registerType, address + offset) ?? 0
     )
+
+  /** The requests a master sent `uuid` that pass `filter`, oldest first. */
+  public getRequests = (uuid: string, filter: ServerRequestFilter): ServerRequest[] =>
+    this._requestLog.list(uuid, filter)
 
   /** Binds a listener for a uuid, and answers the port it took. */
   public createServer = (params: CreateServerParams): Promise<number | undefined> =>
@@ -100,6 +110,7 @@ export class ModbusServer {
     }
 
     this._registry.deleteUuid(uuid)
+    this._requestLog.delete(uuid)
 
     await this._tcp.closeAndForget(uuid)
   }

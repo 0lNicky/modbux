@@ -4,6 +4,7 @@ import net from 'net'
 import { Windows } from '../../windows'
 import { emitServerMessage } from './messages'
 import { ServerRegistry } from './registry'
+import { ServerRequestLog } from './requestLog'
 import { createVector } from './vector'
 
 const isPort = (port: number): boolean => Number.isInteger(port) && port >= 1 && port <= 65535
@@ -20,6 +21,7 @@ export const BIND_TIMEOUT_MS = 5000
 interface TcpServersParams {
   windows: Windows
   registry: ServerRegistry
+  requestLog: ServerRequestLog
 }
 
 /**
@@ -32,13 +34,15 @@ interface TcpServersParams {
 export class TcpServers {
   private _windows: Windows
   private _registry: ServerRegistry
+  private _requestLog: ServerRequestLog
 
   private _port: Map<string, number> = new Map()
   private _servers: Map<string, ServerTCP> = new Map()
 
-  constructor({ windows, registry }: TcpServersParams) {
+  constructor({ windows, registry, requestLog }: TcpServersParams) {
     this._windows = windows
     this._registry = registry
+    this._requestLog = requestLog
   }
 
   /** The port a uuid is listening on, or nothing where it has no listener. */
@@ -101,7 +105,7 @@ export class TcpServers {
     uuid: string,
     port: number
   ): Promise<{ ok: boolean; errorCode?: string }> {
-    const server = new ServerTCP(createVector(this._registry, uuid, 'tcp'), {
+    const server = new ServerTCP(createVector(this._registry, this._requestLog, uuid, 'tcp'), {
       host: '0.0.0.0',
       port
     })
