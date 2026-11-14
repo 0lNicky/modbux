@@ -2,7 +2,7 @@
 
 [English](./README.en.md) | 正體中文
 
-> 本專案分支自 [ploxc](https://github.com/ploxc) 開發的 [ploxc/modbux](https://github.com/ploxc/modbux)，新增了 MCP 伺服器，讓 AI 代理程式可直接操控 Client 與 Server。
+> 本專案 Fork 自 [ploxc](https://github.com/ploxc) 開發的 [ploxc/modbux](https://github.com/ploxc/modbux)，新增了 MCP 伺服器，讓 AI 代理程式可直接操控 Client 與 Server。
 
 ## 交由 AI 代理程式安裝
 
@@ -58,7 +58,7 @@ Do not build from source.
 
 **[下載最新版本](https://github.com/fengchyunbih/modbux/releases/latest)**
 
-提供 Windows 安裝檔、macOS（Apple silicon 與 Intel）安裝映像檔，以及 Linux 的 `.deb` 與 `.AppImage`（x64 與 arm64）。
+提供 Windows 安裝檔、macOS（Apple Silicon 與 Intel）安裝映像檔，以及 Linux 的 `.deb` 與 `.AppImage`（x64 與 arm64）。
 
 **[閱讀使用手冊](docs/manual/README.md)**、**[閱讀 MCP 說明文件](docs/mcp.md)**，以及其餘功能的[上游說明文件](https://ploxc.com/modbux/docs/latest/getting-started)。
 
@@ -66,57 +66,57 @@ Do not build from source.
 
 **Client 模式：**
 
-- 解碼所有常見資料型別：int16/32/64、uint16/32/64、float、double、bitmap、時間戳記（`UNIX` 與 IEC 870-5 `DATETIME`）與 UTF-8 字串；UTF-8 只能讀取，寫入對話框不寫入 UTF-8
+- 解碼所有常見資料型別：int16/32/64、uint16/32/64、float、double、bitmap、時間戳記（`UNIX` 與 IEC 870-5 `DATETIME`）與 UTF-8 字串；UTF-8 僅供讀取，寫入對話框不支援寫入 UTF-8
 - Bitmap 明細面板：可展開檢視 16 個位元，支援逐位元切換、燈號顏色設定、反相（Invert）與行內註解
 - Advanced mode（進階模式）：同時顯示所有數值資料型別的解碼結果
 - `Read configuration` 模式：僅讀取已設定的暫存器，自動合併分組、顯示群組索引欄位（`G`）與行內錯誤訊息
 - 掃描 Unit ID 與暫存器位址範圍，並在掃描進行時即時填入表格
-- 區分「回傳例外碼的 Unit」與「無回應的 Unit」：前者代表總線上有設備但拒絕該請求，後者代表總線上沒有該設備
+- 區分「回傳例外碼的 Unit」與「無回應的 Unit」：前者代表匯流排上有設備但拒絕該請求，後者代表匯流排上沒有該設備
 - 四種位元組與字組順序（`ABCD`、`CDAB`、`BADC`、`DCBA` — 支援交換暫存器順序與交換暫存器內位元組）
 - 縮放係數（Scaling factor）與線性內插（Linear interpolation）
-- 支援 Modbus TCP（主機名稱或 IP）與 RTU，並自動偵測 COM 序列埠
+- 支援 Modbus TCP（主機名稱或 IP）與 RTU，並自動偵測序列埠（COM 埠）
 - 支援 RTU over TCP，適用於傳送封裝 RTU 封包的序列轉乙太網路閘道器
-- 通訊紀錄（Transaction log，最多保留 1,000 筆原始十六進位封包、延遲時間，並支援匯出 CSV）
+- 通訊紀錄（Transaction log，最多保留 1,000 筆紀錄，包含原始十六進位封包與延遲時間，並支援匯出 CSV）
 - 復原與重做（Undo / Redo，最多 100 步）
 - 設定檔儲存與載入（JSON）
 
 **Server 模式：**
 
-- 支援 Modbus TCP 與 RTU 伺服器模式（實體序列埠、USB 轉接器、socat 虛擬序列埠對）
+- 支援 Modbus TCP 與 RTU 伺服器模式（實體序列埠、USB 轉接器、socat 虛擬序列埠）
 - 同時模擬最多 10 台 Modbus TCP 伺服器（各自使用不同連接埠）
 - 每台伺服器皆支援協定允許的完整 Unit ID 範圍（0–255）
 - 支援與 Client 相同的資料型別：數值暫存器、bitmap、UTF-8 字串、Unix 時間戳記與 IEC 870-5 datetime
 - 固定數值或可設定更新間隔的隨機數值產生器（Generator）
 - 輸出系統目前時間的 Unix / datetime 時間產生器
 - 附帶 UTC 切換開關的 DateTimePicker，可設定精確時間戳記
-- 重新設計的布林點位介面：逐位址列顯示切換圓鈕、行內註解與游標懸停刪除按鈕
+- 重新設計的布林點位介面：逐位址列顯示圓點切換開關、行內註解與游標懸停刪除按鈕
 - 故障注入規則（Fault rules，每台伺服器最多 32 條規則：模擬回傳 Modbus 例外碼、`no_response` 或回應延遲 `delay`，支援 `everyNth` 與 `forSeconds` 條件）
 - 設定檔儲存與載入，以及完整專案檔儲存與載入（`Save project` / `Open project`，JSON）
-- 啟動即自動開始監聽
+- 啟動後即自動開始監聽
 
 **Split Mode（並排模式）：**
 
 - 在兩個獨立視窗中同時執行 Client 與 Server
 - Server 在第二個視窗開啟，主視窗則切換為 Client
 - 透過 `127.0.0.1` 連線至本機模擬伺服器進行測試
-- 適合實際演練 Modbus 或同時開發通訊兩端的程式
+- 適合動手實測 Modbus，或同時開發通訊兩端的程式
 
 **MCP 伺服器：**
 
 - 內建 Model Context Protocol (MCP) 伺服器，監聽 `http://127.0.0.1:15502/mcp`（Streamable HTTP + Bearer token）並提供 `stdio` 轉接器（`out/main/mcpStdio.js`）
 - 提供 29 項工具、7 項資源與 4 組提示詞範本，讓 AI 代理程式操控 Client 與 Server
-- 具備寫入保護開關（Settings 中的 `Allow writes to devices` 開關）
+- 具備寫入保護開關（Settings 頁面中的 `Allow writes to devices`）
 
 **狀態自動保存（State Persistence）：**
 
-- Client 與 Server 的設定（連線、讀取設定、點位對應表、伺服器與暫存器）在關閉與重啟之間自動保存
-- 連線與輪詢狀態、讀到的數值、通訊紀錄、故障規則與 Undo 歷史不保存，詳見[使用手冊第 7 章](docs/manual/README.md#7-狀態持久化與復原persistence--undoredo)
+- Client 與 Server 的設定（連線、讀取設定、點位對應表、伺服器與暫存器）會在關閉與重新啟動之間自動保留
+- 連線與輪詢狀態、讀到的數值、通訊紀錄、故障規則與 Undo 歷史則不會保存，詳見[使用手冊第 7 章](docs/manual/README.md#7-狀態保存與復原persistence--undoredo)
 
 ## 工具比較
 
 市面上的 Modbus 工具不少，其中幾款在各自領域表現不俗。問題在於每套工具往往只做其中一件事，而且好用的多半是付費且僅支援 Windows：Client 一套、Server 一套、掃描器又是另一套。我過去好幾年都得在這些視窗之間來回切換。
 
-Modbux 免費開源，支援 Windows、macOS 與 Linux，並將 Client 與 Server 整合在同一個應用程式裡，讓你直接連向 `127.0.0.1` 測試，手邊不需要任何硬體。我開發它最核心的理由是資料解讀能力：對同一批暫存器同時套用所有資料型別、隨時切換位元組順序、套用縮放換算，以及不僅找出哪個 Unit ID 有回應、更能直接找出資料位址落在哪裡的掃描器。
+Modbux 免費開源，支援 Windows、macOS 與 Linux，並將 Client 與 Server 整合在同一個應用程式裡，讓你直接連向 `127.0.0.1` 測試，手邊不需要任何硬體。我開發它最核心的理由是資料解讀能力：對同一批暫存器同時套用所有資料型別、隨時切換位元組順序、套用縮放換算，以及能找出哪個 Unit ID 有回應、甚至直接掃出資料位址落在哪裡的掃描器。
 
 若想逐一比較各款工具，請參閱上游網站的[工具比較頁面](https://ploxc.com/modbux/alternatives)。
 
@@ -126,7 +126,7 @@ Modbux 免費開源，支援 Windows、macOS 與 Linux，並將 Client 與 Serve
 
 ## 為什麼會有這套工具
 
-四年前，我在完全沒有 Modbus 經驗的情況下被派去執行汽電共生廠（CHP）的試車。客戶不知道點位位址，我也不懂通訊協定。手邊只有一套掃描出「某些東西」的掃描器，以及一個顯示十六進位數值卻無法幫我解讀意義的讀取工具。
+四年前，我在完全沒有 Modbus 經驗的情況下被派去執行汽電共生廠（CHP）的試車。客戶不知道點位位址，我也不懂通訊協定。手邊只有一套掃描出「某些東西」的掃描器，以及一個只會顯示十六進位數值、卻無法幫我解讀意義的讀取工具。
 
 _溫度到底在暫存器 100 還是 101？說明書是從 0 還是從 1 開始算？為什麼手冊寫 Holding Register 0，TIA Portal 卻叫它 40000？它是 big-endian 還是 little-endian？是 Input Registers 還是 Holding Registers？我到底該用哪個 Function Code？_
 
@@ -148,7 +148,7 @@ _溫度到底在暫存器 100 還是 101？說明書是從 0 還是從 1 開始�
 
 我做出了一套能同時顯示所有可能資料型別解讀結果的工具；一套不只掃描設備、更能直接掃描出「實際資料位址在哪裡」的工具（因為我曾花了好幾個小時才發現第三方說明書寫錯了暫存器範圍）；一套能讓你去現場之前，先在辦公室用模擬設備驗證 PLC 程式的工具。
 
-我現在每天都在用它。寫好 Modbus 程式卻只能「祈禱」去到現場連上設備會動？我再也不用那種方式工作了。
+我現在每天都在用它。寫好 Modbus 程式卻只能「祈禱」到現場連上設備時能正常運作？我再也不用那種方式工作了。
 
 **如果你曾經與 Modbus 苦戰過，你就會明白為什麼需要這套工具。**
 
@@ -160,11 +160,11 @@ _溫度到底在暫存器 100 還是 101？說明書是從 0 還是從 1 開始�
 
 ## 為什麼叫「Modbux」？
 
-這是我自己常打錯的字——把 _modbus_ 打成 _modbux_。但這個名字剛好契合：它代表你在操作 Modbus 時的使用者體驗（UX）。這個打字錯誤就成了品牌名稱。
+這是我自己常打錯的字——把 _modbus_ 打成 _modbux_。但這個名字剛好契合：它代表你在操作 Modbus 時的使用者體驗（UX）。這個錯字就成了品牌名稱。
 
 ## 實用技巧：讓 AI 處理繁瑣設定
 
-儲存的設定檔皆為 JSON 格式。給 Claude 或 ChatGPT 看幾個暫存器範例、貼上設備說明書的點位表，請它補齊完整對應表，再載入回 Modbux 即可完成。歡迎來到 2026 年。
+儲存的設定檔皆為 JSON 格式。給 Claude 或 ChatGPT 看幾個暫存器範例、貼上設備說明書的點位表，請它補齊完整對應表，再載入 Modbux 即可完成。歡迎來到 2026 年。
 
 ## 安裝說明
 
@@ -176,7 +176,7 @@ _溫度到底在暫存器 100 還是 101？說明書是從 0 還是從 1 開始�
 
 ### macOS
 
-從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.dmg` 檔案。Apple silicon 請選擇 `arm64`，Intel 請選擇 `x64`。
+從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.dmg` 檔案。Apple Silicon 請選擇 `arm64`，Intel 請選擇 `x64`。
 
 **需 macOS 12 以上版本。** Modbux 2.3 升級至 Electron 41，不再支援 Catalina 或 Big Sur。Modbux 2.2.1 仍支援舊版系統，並保留於[上游 releases 頁面](https://github.com/ploxc/modbux/releases)。
 
@@ -186,12 +186,12 @@ _溫度到底在暫存器 100 還是 101？說明書是從 0 還是從 1 開始�
 
 從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.deb` 或 `.AppImage`（支援 x64 與 arm64）。亦可從原始碼建置，請參閱[自行建置](#自行建置)。
 
-在 Linux 上有兩項功能需要應用程式無法自行取得的系統權限，Modbux 會主動彈出提示詢問，而非無聲失敗：
+在 Linux 上有兩項功能需要應用程式無法自行取得的系統權限，Modbux 會主動彈出提示詢問，而非默默失敗：
 
-- **連接埠 502** 預設保留給 root 使用，因此伺服器會改在其他連接埠啟動。開啟 Server 畫面時會詢問是否下調特權連接埠門檻（可選擇生效至下次重開機或永久生效）。
-- **序列埠**屬於特定系統群組（通常為 `dialout`），不在群組內的使用者無法開啟序列埠。由於序列埠仍會出現在清單中，在連線被拒前表面上看不到異狀。切換至 RTU 時會詢問是否將你的帳號加入群組，並在完成後提供登出選項（因為登入工作階段會維持登入當下的群組權限）。
+- **連接埠 502** 預設保留給 root 使用，因此伺服器會改在其他連接埠啟動。開啟 Server 畫面時會詢問是否調降特權連接埠門檻（可選擇生效至下次重開機或永久生效）。
+- **序列埠**屬於特定系統群組（通常為 `dialout`），不在群組內的使用者無法開啟序列埠。由於序列埠仍會出現在清單中，在連線被拒前看起來一切正常。切換至 RTU 時會詢問是否將你的帳號加入群組，並在完成後提供登出選項（因為登入工作階段會維持登入當下的群組權限）。
 
-兩項功能在執行前都會顯示完整指令，並透過 PolicyKit 詢問密碼，Modbux 本身不會接觸你的密碼。若在 Flatpak 或 Snap 沙盒中執行，則會改為顯示指令供你自行貼上執行。若想手動執行，指令亦列於下方[自行建置](#自行建置)章節。
+兩項功能在執行前都會顯示完整指令，並透過 PolicyKit 詢問密碼，Modbux 本身不會經手你的密碼。若在 Flatpak 或 Snap 沙盒中執行，則會改為顯示指令供你自行貼上執行。若想手動執行，指令亦列於下方[自行建置](#自行建置)章節。
 
 ## 自行建置
 
@@ -240,7 +240,7 @@ yarn test:watch
 yarn test:e2e
 ```
 
-**執行當前平台支援的所有測試：**
+**執行目前平台支援的所有測試：**
 
 ```bash
 yarn test:all:mac
@@ -272,7 +272,7 @@ yarn test:e2e:hardware
 
 ### 建置安裝包
 
-**建立當前平台的可發佈安裝包：**
+**建立目前平台的可發布安裝包：**
 
 ```bash
 # Windows
@@ -306,11 +306,11 @@ yarn build:linux
 > sudo usermod -aG dialout $USER
 > ```
 >
-> 設定完成後請登出再重新登入才會生效：登入工作階段會沿用登入時取得的群組清單，因此系統檔案雖已更新，但當前工作階段不會立即變更。
+> 設定完成後請登出再重新登入才會生效：登入工作階段會沿用登入時取得的群組清單，因此系統檔案雖已更新，但目前的工作階段不會立即變更。
 
 ## 參與貢獻
 
-本分支儲存庫已關閉 Issues 功能。請針對 [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux) 的 `develop` 分支發起 Pull Request，規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。若為上游應用程式本身的錯誤，請回報至 [ploxc/modbux](https://github.com/ploxc/modbux/issues)。
+本 Fork 儲存庫已關閉 Issues 功能。請針對 [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux) 的 `develop` 分支提出 Pull Request，相關規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。若為上游應用程式本身的錯誤，請回報至 [ploxc/modbux](https://github.com/ploxc/modbux/issues)。
 
 ## 授權條款
 
@@ -318,4 +318,4 @@ yarn build:linux
 
 ## 第三方軟體
 
-本軟體使用具備寬鬆授權條款（MIT、ISC、Apache-2.0、BSD）的開源套件。所有第三方授權條款皆隨附於發佈的應用程式中。
+本軟體採用寬鬆授權條款（MIT、ISC、Apache-2.0、BSD）的開源套件。所有第三方授權條款皆隨附於發布的應用程式中。
