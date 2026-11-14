@@ -624,14 +624,16 @@ describe('each guarded channel got its own schema', () => {
   // Written by hand, because what a channel answers for a payload it took is
   // its own decision and not something the handler list tells apart. The
   // refusal half of the same rule is read from the handlers below.
-  it.each(['update_connection_config', 'update_register_config', 'set_register_mapping'])(
-    '%s answers true for a payload it took',
-    async (channel) => {
-      start()
+  it.each([
+    'update_connection_config',
+    'update_register_config',
+    'set_register_mapping',
+    'set_server_faults'
+  ])('%s answers true for a payload it took', async (channel) => {
+    start()
 
-      expect(await invoke(channel, validPayloads[channel])).toBe(true)
-    }
-  )
+    expect(await invoke(channel, validPayloads[channel])).toBe(true)
+  })
 
   it.each(Object.keys(validPayloads))('lets a valid %s payload through', async (channel) => {
     const { sent } = start()
@@ -705,13 +707,13 @@ describe('the fault rule channels', () => {
     return { setFaults, getFaults, sent }
   }
 
-  it('set_server_faults hands the server the uuid and the whole list, and answers nothing', async () => {
+  it('set_server_faults hands the server the uuid and the whole list, and answers true', async () => {
     const { setFaults } = startWith()
 
     const answer = await invoke('set_server_faults', { uuid: 'server-1', rules: [RULE, RULE] })
 
     expect(setFaults).toHaveBeenCalledWith('server-1', [RULE, RULE])
-    expect(answer).toBeUndefined()
+    expect(answer).toBe(true)
   })
 
   it('set_server_faults takes an empty list, which clears', async () => {

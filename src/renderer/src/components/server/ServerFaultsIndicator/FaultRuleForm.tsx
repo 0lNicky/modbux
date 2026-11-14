@@ -225,6 +225,16 @@ const FormActions = meme(() => {
   )
 })
 
+const GoneNotice = meme(() => {
+  const gone = useServerFaultsDialogZustand((z) => z.gone)
+  if (!gone) return null
+  return (
+    <Typography data-testid="fault-form-gone" color="warning.main" variant="body2">
+      This rule no longer exists. Saving adds it as a new rule.
+    </Typography>
+  )
+})
+
 /** The one form for adding and editing a rule: every field of `ServerFaultRuleSchema`. */
 const FaultRuleForm = meme(() => {
   const isNew = useServerFaultsDialogZustand((z) => z.editing === 'new')
@@ -232,6 +242,7 @@ const FaultRuleForm = meme(() => {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
       <Typography variant="subtitle1">{isNew ? 'Add rule' : 'Edit rule'}</Typography>
+      <GoneNotice />
       <Typography variant="body2" color="text.secondary">
         A request must match every condition. Empty means any.
       </Typography>

@@ -476,3 +476,209 @@ describe('the form', () => {
     expect(sets()).toEqual([])
   })
 })
+
+/** What `set_server_faults` answers next: a refusal is `undefined`. */
+const refuseNextWrite = (): void => {
+  const underneath = window.api as unknown as Record<string, unknown>
+  window.api = new Proxy(
+    {},
+    {
+      get: (_target, name: string): unknown =>
+        name === 'setServerFaults'
+          ? (payload: unknown): Promise<undefined> => {
+              calls.push({ method: 'setServerFaults', payload })
+              window.api = underneath as never
+              return Promise.resolve(undefined)
+            }
+          : underneath[name]
+    }
+  ) as never
+}
+
+/** Delivers a changed list the way main does: the event, then the status it asks for. */
+const mainChangesTheList = async (rules: ServerFaultRule[]): Promise<void> => {
+  answerNow = statusOf(rules)
+  await act(async () => {
+    fireEvent('server_faults', { uuid: UUID, rules })
+  })
+}
+
+const FOUR = [1, 2, 3, 4].map(
+  (unitId): ServerFaultRule => ({ unitId, action: { kind: 'exception', code: 6 } })
+)
+/** The nth of `FOUR`, which a missing one would make the test throw by name. */
+const four = (n: number): ServerFaultRule => {
+  const rule = FOUR[n]
+  if (!rule) throw new Error(`FOUR has no rule ${n}`)
+  return rule
+}
+const code = (unitId: number, value: number): ServerFaultRule => ({
+  unitId,
+  action: { kind: 'exception', code: value }
+})
+
+describe('an edit while main changes the list', () => {
+  beforeEach(() => {
+    answerNow = statusOf(FOUR)
+  })
+
+  const editThird = async (): Promise<void> => {
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-2-edit'))
+    })
+    type('fault-form-code', '2')
+  }
+
+  const save = async (): Promise<void> => {
+    await act(async () => {
+      dom.click(screen.getByTestId('fault-form-save-btn'))
+    })
+  }
+
+  it('replaces the rule picked where it now sits after an earlier rule expired', async () => {
+    await editThird()
+
+    await mainChangesTheList(FOUR.slice(1))
+    await save()
+
+    expect(sets()).toEqual([{ uuid: UUID, rules: [four(1), code(3, 2), four(3)] }])
+  })
+
+  it('replaces the rule picked after an MCP reorder', async () => {
+    await editThird()
+
+    await mainChangesTheList([four(3), four(2), four(1), four(0)])
+    await save()
+
+    expect(sets()).toEqual([{ uuid: UUID, rules: [four(3), code(3, 2), four(1), FOUR[0]] }])
+  })
+
+  it('keeps the form and the draft when the rule is gone, and says so', async () => {
+    await editThird()
+
+    await mainChangesTheList([four(0), four(1), four(3)])
+
+    expect(screen.getByTestId('fault-form-gone')).toHaveTextContent(
+      'This rule no longer exists. Saving adds it as a new rule.'
+    )
+    expect(screen.getByTestId('fault-form-code')).toHaveValue('2')
+    expect(sets()).toEqual([])
+  })
+
+  it('adds the draft as a new rule, and touches no other, once the rule is gone', async () => {
+    await editThird()
+    await mainChangesTheList([four(0), four(1), four(3)])
+
+    await save()
+
+    expect(sets()).toEqual([{ uuid: UUID, rules: [four(0), four(1), FOUR[3], code(3, 2)] }])
+  })
+
+  it('shows no notice while the rule is still there, wherever it moved', async () => {
+    await editThird()
+
+    await mainChangesTheList(FOUR.slice(1))
+
+    expect(screen.queryByTestId('fault-form-gone')).not.toBeInTheDocument()
+  })
+
+  it('replaces the first of two identical rules', async () => {
+    answerNow = statusOf([four(0), four(2), four(2)])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-2-edit'))
+    })
+    type('fault-form-code', '2')
+
+    await save()
+
+    expect(sets()).toEqual([{ uuid: UUID, rules: [four(0), code(3, 2), four(2)] }])
+  })
+})
+
+describe('a write that cannot succeed', () => {
+  const full = (): ServerFaultRule[] => Array.from({ length: 32 }, (_, i) => code(i, 6))
+
+  it('keeps the form and the draft when the list filled up under it, and says why', async () => {
+    answerNow = statusOf(full().slice(0, 31))
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-add-btn'))
+    })
+    type('fault-form-code', '6')
+
+    await mainChangesTheList(full())
+    await act(async () => {
+      dom.click(screen.getByTestId('fault-form-save-btn'))
+    })
+
+    expect(sets()).toEqual([])
+    expect(screen.getByTestId('fault-form-code')).toHaveValue('6')
+    expect(screen.getByTestId('server-faults-error')).toHaveTextContent(
+      'A server takes at most 32 rules'
+    )
+  })
+
+  it('keeps the form when main refuses the list, and shows that', async () => {
+    answerNow = statusOf([BUSY])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-add-btn'))
+    })
+    type('fault-form-code', '6')
+    refuseNextWrite()
+
+    await act(async () => {
+      dom.click(screen.getByTestId('fault-form-save-btn'))
+    })
+
+    expect(sets()).toHaveLength(1)
+    expect(screen.getByTestId('fault-form-code')).toHaveValue('6')
+    expect(screen.getByTestId('server-faults-error')).toHaveTextContent('Main refused')
+  })
+
+  it('shows a refused delete or move on the list, and leaves the list as it was', async () => {
+    answerNow = statusOf([BUSY, SILENT])
+    await openDialog()
+    refuseNextWrite()
+
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+
+    expect(screen.getByTestId('server-faults-error')).toHaveTextContent('Main refused')
+    expect(screen.getByTestId('server-faults-rule-1')).toBeInTheDocument()
+  })
+
+  it('clears the message once a write goes through', async () => {
+    answerNow = statusOf([BUSY, SILENT])
+    await openDialog()
+    refuseNextWrite()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+
+    expect(screen.queryByTestId('server-faults-error')).not.toBeInTheDocument()
+  })
+
+  it('takes the list that fills the limit exactly', async () => {
+    answerNow = statusOf(full().slice(0, 31))
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-add-btn'))
+    })
+    type('fault-form-code', '6')
+
+    await act(async () => {
+      dom.click(screen.getByTestId('fault-form-save-btn'))
+    })
+
+    expect((sets()[0] as { rules: unknown[] }).rules).toHaveLength(32)
+    expect(screen.queryByTestId('server-faults-error')).not.toBeInTheDocument()
+  })
+})

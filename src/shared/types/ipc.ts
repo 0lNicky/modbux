@@ -437,11 +437,13 @@ export interface IpcHandlerSpec {
    * Replace a server's whole fault list, the way `server_set_faults` does over MCP.
    *
    * Every rule's counts restart and every `forSeconds` clock restarts. Answers
-   * nothing: the list now in effect comes back as `server_faults`.
+   * `true` when it took the list, and `undefined` when it refused the payload,
+   * so a window can keep its form open. The list now in effect comes back as
+   * `server_faults`.
    */
   ['set_server_faults']: {
     args: [SetServerFaultsParams]
-    return: void
+    return: true | undefined
   }
 
   /** A server's (UUID) fault rules in order, each with what it has done, as `server_get_faults` answers. */

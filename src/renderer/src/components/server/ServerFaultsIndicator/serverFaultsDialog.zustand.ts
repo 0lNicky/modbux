@@ -1,7 +1,13 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import { create } from 'zustand'
 import { mutative } from 'zustand-mutative'
-import type { ServerFaultRuleStatus } from '@shared'
+import { deepEqual } from 'fast-equals'
+import {
+  MAX_FAULT_RULES,
+  SetServerFaultsParamsSchema,
+  type ServerFaultRule,
+  type ServerFaultRuleStatus
+} from '@shared'
 import { onEvent } from '@renderer/events'
 import {
   draftFromRule,
@@ -12,8 +18,8 @@ import {
   type FaultRuleDraft
 } from './faultRule'
 
-/** Which rule the form is editing: a place in the list, or a rule not in it yet. */
-export type EditingFaultRule = number | 'new'
+/** What the form is for: a rule picked from the list, or a rule not in it yet. */
+export type EditingFaultRule = 'existing' | 'new'
 
 interface ServerFaultsDialogZustand {
   open: boolean
@@ -25,11 +31,22 @@ interface ServerFaultsDialogZustand {
   fetchedAt: number
   /** Undefined while the list is shown. */
   editing: EditingFaultRule | undefined
+  /**
+   * The rule the form was opened on, as it was then. A position would name a
+   * different rule once main changes the list, so a save finds this rule
+   * again instead.
+   */
+  target: ServerFaultRule | undefined
+  /** The target is no longer in the list main holds. */
+  gone: boolean
+  /** Why the last write did not happen, until the next one does. */
+  error: string | undefined
   draft: FaultRuleDraft
   show: (uuid: string) => void
   close: () => void
   refresh: () => Promise<void>
-  edit: (editing: EditingFaultRule) => void
+  /** Opens the form on the rule at `index` of the list shown, or on a new one. */
+  edit: (index: number | 'new') => void
   cancelEdit: () => void
   setDraft: (patch: Partial<FaultRuleDraft>) => void
   save: () => Promise<void>
@@ -53,10 +70,37 @@ export const useServerFaultsDialogZustand = create<
     /** The list main holds as `status` last said it, which every write sends back whole. */
     const currentRules = () => get().status.map(ruleOfStatus)
 
-    const replaceWith = async (rules: ReturnType<typeof currentRules>) => {
-      // `server_faults` follows the write and asks for the status again.
-      await window.api.setServerFaults({ uuid: get().uuid, rules })
+    /**
+     * Sends `rules` and says whether main took them. A list the schema refuses is
+     * not sent, and a reply that is not `true` is a refusal, so the reason is
+     * kept for the screen. `server_faults` follows a taken write and asks for
+     * the status again.
+     */
+    const replaceWith = async (rules: ServerFaultRule[]): Promise<boolean> => {
+      const params = { uuid: get().uuid, rules }
+      const refusal = (message: string): false => {
+        set((state) => {
+          state.error = message
+        })
+        return false
+      }
+      if (rules.length > MAX_FAULT_RULES) {
+        return refusal(`A server takes at most ${MAX_FAULT_RULES} rules`)
+      }
+      const parsed = SetServerFaultsParamsSchema.safeParse(params)
+      if (!parsed.success) return refusal(parsed.error.issues[0]?.message ?? 'Invalid rules')
+      if ((await window.api.setServerFaults(parsed.data)) !== true) {
+        return refusal('Main refused the rules, so nothing changed')
+      }
+      set((state) => {
+        state.error = undefined
+      })
+      return true
     }
+
+    /** Whether `target` is in the list `status` holds, equal rules being interchangeable. */
+    const isListed = (status: ServerFaultRuleStatus[], target: ServerFaultRule | undefined) =>
+      target !== undefined && status.some((row) => deepEqual(ruleOfStatus(row), target))
 
     return {
       open: false,
@@ -64,6 +108,9 @@ export const useServerFaultsDialogZustand = create<
       status: [],
       fetchedAt: 0,
       editing: undefined,
+      target: undefined,
+      gone: false,
+      error: undefined,
       draft: emptyDraft,
       show: (uuid) => {
         set((state) => {
@@ -71,6 +118,7 @@ export const useServerFaultsDialogZustand = create<
           state.uuid = uuid
           state.status = []
           state.editing = undefined
+          state.error = undefined
         })
         void get().refresh()
       },
@@ -89,36 +137,48 @@ export const useServerFaultsDialogZustand = create<
         set((state) => {
           state.status = status
           state.fetchedAt = Date.now()
+          state.gone = state.editing === 'existing' && !isListed(status, state.target)
         })
       },
-      edit: (editing) =>
+      edit: (index) =>
         set((state) => {
-          state.editing = editing
-          const rule = editing === 'new' ? undefined : state.status[editing]
-          state.draft = rule === undefined ? emptyDraft : draftFromRule(ruleOfStatus(rule))
+          const row = index === 'new' ? undefined : state.status[index]
+          state.editing = row === undefined ? 'new' : 'existing'
+          state.target = row === undefined ? undefined : ruleOfStatus(row)
+          state.gone = false
+          state.error = undefined
+          state.draft = row === undefined ? emptyDraft : draftFromRule(ruleOfStatus(row))
         }),
       cancelEdit: () =>
         set((state) => {
           state.editing = undefined
+          state.error = undefined
         }),
       setDraft: (patch) =>
         set((state) => {
           Object.assign(state.draft, patch)
         }),
       save: async () => {
-        const { editing, draft } = get()
+        const { editing, draft, target } = get()
         const { rule } = ruleFromDraft(draft)
         if (editing === undefined || rule === undefined) return
         const rules = currentRules()
-        await replaceWith(
-          editing === 'new' ? [...rules, rule] : rules.map((old, i) => (i === editing ? rule : old))
+        // The rule picked, found where it sits now. Gone, the draft is added.
+        const at = editing === 'existing' ? rules.findIndex((old) => deepEqual(old, target)) : -1
+        const taken = await replaceWith(
+          at === -1 ? [...rules, rule] : rules.map((old, i) => (i === at ? rule : old))
         )
+        if (!taken) return
         set((state) => {
           state.editing = undefined
         })
       },
-      move: (index, step) => replaceWith(moveRule(currentRules(), index, step)),
-      remove: (index) => replaceWith(currentRules().filter((_, i) => i !== index)),
+      move: async (index, step) => {
+        await replaceWith(moveRule(currentRules(), index, step))
+      },
+      remove: async (index) => {
+        await replaceWith(currentRules().filter((_, i) => i !== index))
+      },
       clearAll: () => window.api.clearServerFaults(get().uuid)
     }
   })

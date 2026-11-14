@@ -13,6 +13,19 @@ import { useServerFaultsDialogZustand } from './serverFaultsDialog.zustand'
 
 //
 //
+// Why the last write did not happen
+const WriteError = meme(() => {
+  const error = useServerFaultsDialogZustand((z) => z.error)
+  if (error === undefined) return null
+  return (
+    <Typography data-testid="server-faults-error" color="error" variant="body2" sx={{ mb: 1 }}>
+      {error}
+    </Typography>
+  )
+})
+
+//
+//
 // The rules, in the order they are tried
 const RuleList = meme(() => {
   const ruleCount = useServerFaultsDialogZustand((z) => z.status.length)
@@ -92,7 +105,10 @@ const ServerFaultsDialog = meme(() => {
   return (
     <Dialog open={open} onClose={close} maxWidth="md" fullWidth data-testid="server-faults-dialog">
       <DialogTitle>Fault rules</DialogTitle>
-      <DialogContent>{editing ? <FaultRuleForm /> : <RuleList />}</DialogContent>
+      <DialogContent>
+        <WriteError />
+        {editing ? <FaultRuleForm /> : <RuleList />}
+      </DialogContent>
       {!editing && <ListActions />}
     </Dialog>
   )

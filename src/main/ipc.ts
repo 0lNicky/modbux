@@ -325,7 +325,10 @@ export const initIpc: InitIpcFn = (app, state, client, server, windows, mcp) => 
   ipcHandle('clear_server_faults', (_, uuid) => server.clearFaults(uuid), ServerUuidSchema)
   ipcHandle(
     'set_server_faults',
-    (_, { uuid, rules }) => void server.setFaults(uuid, rules),
+    (_, { uuid, rules }) => {
+      server.setFaults(uuid, rules)
+      return true
+    },
     SetServerFaultsParamsSchema
   )
   ipcHandle('get_server_fault_status', (_, uuid) => server.getFaults(uuid))
