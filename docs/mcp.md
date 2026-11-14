@@ -77,9 +77,10 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 - RTU 的 unit 0 是 broadcast：讀取不回應，記為 `no_response`；寫入寫進每個有資料的 unit、不回應，記為 `ok`。超過位址 65535 的 broadcast 寫入一個位址都不寫，記為 `no_response`。
 - 紀錄只有到達 Server 暫存器的請求。modbus-serial 自己處理掉的請求不記，故障規則也不套用，因為 vector 沒有被呼叫。依 `servertcp_handler.js`、`servertcp.js` 與 `serverserial.js`：
   - FC1、FC2、FC3、FC4、FC15 的數量為 0：回 exception 2，沒有紀錄。FC16 數量為 0 會呼叫 vector，記為 exception 2。
-  - 不支援的 function code：回 exception 1，沒有紀錄。
+  - FC1 或 FC2 的數量大於 2040，FC3 或 FC4 的數量大於 127：回應的位元組數放不進一個位元組，回 exception 4，沒有紀錄。2040 與 127 照常讀取並記錄。
+  - vector 沒有對應 accessor 的 function code，例如 7 與 43：回 exception 1，沒有紀錄。
   - FC1 到 FC6 的 frame 長度不是 8 位元組，FC15 與 FC16 的長度與數量不符：不回應，沒有紀錄。
-  - RTU 的 CRC 錯誤：不回應，沒有紀錄。
+  - RTU 的 CRC 錯誤不在此列：library 收到 frame 後重算 CRC 並蓋掉收到的值，所以 CRC 錯的 frame 不會被擋下，會到達 Server、被記錄，也會遇到故障規則。
 - 不存在的 `uuid` 回空清單。這個 tool 不經過 renderer，所以 Server 畫面拆到另一個視窗時也能用。
 
 ## 故障注入
