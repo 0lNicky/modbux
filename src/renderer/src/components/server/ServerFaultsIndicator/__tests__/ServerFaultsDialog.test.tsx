@@ -33,6 +33,9 @@ const statusOf = (rules: ServerFaultRule[]): ServerFaultRuleStatus[] =>
 /** What `get_server_fault_status` answers next, one reply per call, each held until released. */
 let pending: Array<(status: ServerFaultRuleStatus[]) => void> = []
 let answerNow: ServerFaultRuleStatus[] | undefined
+/** While set, `set_server_faults` waits for a test to answer it, one reply per call. */
+let holdWrites = false
+let heldWrites: Array<(answer: true | undefined) => void> = []
 
 stubRenderer()
 {
@@ -48,7 +51,12 @@ stubRenderer()
                 : new Promise((resolve) => {
                     pending.push(resolve)
                   })
-          : underneath[name]
+          : name === 'setServerFaults' && holdWrites
+            ? (): Promise<true | undefined> =>
+                new Promise((resolve) => {
+                  heldWrites.push(resolve)
+                })
+            : underneath[name]
     }
   ) as never
 }
@@ -73,6 +81,8 @@ beforeEach(() => {
   calls.length = 0
   pending = []
   answerNow = undefined
+  holdWrites = false
+  heldWrites = []
   useServerFaultsDialogZustand.getState().close()
 })
 
@@ -583,17 +593,70 @@ describe('an edit while main changes the list', () => {
     expect(screen.queryByTestId('fault-form-gone')).not.toBeInTheDocument()
   })
 
-  it('replaces the first of two identical rules', async () => {
-    answerNow = statusOf([four(0), four(2), four(2)])
+  // Position is priority: the first rule that matches decides, so two equal
+  // rules at two places are two different rules.
+  const A = { action: { kind: 'exception', code: 6 } } as const
+  const B = { unitId: 1, action: { kind: 'no_response' } } as const
+  const C = { unitId: 2, action: { kind: 'exception', code: 2 } } as const
+
+  it('replaces the rule at the place picked when an equal rule sits before it', async () => {
+    answerNow = statusOf([A, B, A])
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-rule-2-edit'))
     })
+    type('fault-form-unit-id', '2')
     type('fault-form-code', '2')
 
     await save()
 
-    expect(sets()).toEqual([{ uuid: UUID, rules: [four(0), code(3, 2), four(2)] }])
+    expect(sets()).toEqual([{ uuid: UUID, rules: [A, B, C] }])
+  })
+
+  it('replaces the rule at the place picked after main changed the list around it', async () => {
+    answerNow = statusOf([A, B, A])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-2-edit'))
+    })
+    type('fault-form-unit-id', '2')
+    type('fault-form-code', '2')
+    await mainChangesTheList([A, B, A, four(0)])
+
+    await save()
+
+    expect(sets()).toEqual([{ uuid: UUID, rules: [A, B, C, four(0)] }])
+  })
+
+  it('treats the rule as gone when the list changed and two rules are equal to it', async () => {
+    answerNow = statusOf([four(0), A, B, A])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-1-edit'))
+    })
+    type('fault-form-unit-id', '2')
+    type('fault-form-code', '2')
+
+    await mainChangesTheList([A, B, A])
+
+    expect(screen.getByTestId('fault-form-gone')).toBeInTheDocument()
+    await save()
+    expect(sets()).toEqual([{ uuid: UUID, rules: [A, B, A, C] }])
+  })
+
+  it('follows the one equal rule to its new place when the list changed', async () => {
+    answerNow = statusOf([A, B])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-edit'))
+    })
+    type('fault-form-unit-id', '2')
+    type('fault-form-code', '2')
+    await mainChangesTheList([B, A])
+
+    expect(screen.queryByTestId('fault-form-gone')).not.toBeInTheDocument()
+    await save()
+    expect(sets()).toEqual([{ uuid: UUID, rules: [B, C] }])
   })
 })
 
@@ -680,5 +743,128 @@ describe('a write that cannot succeed', () => {
 
     expect((sets()[0] as { rules: unknown[] }).rules).toHaveLength(32)
     expect(screen.queryByTestId('server-faults-error')).not.toBeInTheDocument()
+  })
+})
+
+describe('a write reply that arrives after the dialog moved on', () => {
+  const OTHER = 'the-other-server'
+  const held = (n: number): ((answer: true | undefined) => void) => {
+    const release = heldWrites[n]
+    if (!release) throw new Error(`no write ${n} is held`)
+    return release
+  }
+
+  /** Starts a write on `UUID` that stays unanswered. */
+  const startSave = async (): Promise<void> => {
+    holdWrites = true
+    answerNow = statusOf([BUSY])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-add-btn'))
+    })
+    type('fault-form-code', '6')
+    await act(async () => {
+      dom.click(screen.getByTestId('fault-form-save-btn'))
+    })
+    expect(heldWrites).toHaveLength(1)
+  }
+
+  /** A form on another server, or on this one again, with a draft in it. */
+  const openFormElsewhere = async (uuid: string, closeFirst: boolean): Promise<void> => {
+    await act(async () => {
+      if (closeFirst) useServerFaultsDialogZustand.getState().close()
+      useServerFaultsDialogZustand.getState().show(uuid)
+    })
+    await act(async () => {
+      useServerFaultsDialogZustand.getState().edit('new')
+      useServerFaultsDialogZustand.getState().setDraft({ code: '2' })
+    })
+  }
+
+  const form = (): { editing: unknown; code: string; error: unknown; uuid: string } => {
+    const { editing, draft, error, uuid } = useServerFaultsDialogZustand.getState()
+    return { editing, code: draft.code, error, uuid }
+  }
+
+  it.each([
+    ['closed and opened on another server', OTHER, true],
+    ['closed and opened again', UUID, true],
+    ['switched to another server without closing', OTHER, false]
+  ])('does not close the form of a dialog %s, when the save is taken', async (_n, uuid, close) => {
+    await startSave()
+    answerNow = statusOf([])
+    await openFormElsewhere(uuid, close)
+
+    await act(async () => {
+      held(0)(true)
+    })
+
+    expect(form()).toEqual({ editing: 'new', code: '2', error: undefined, uuid })
+  })
+
+  it.each([
+    ['closed and opened on another server', OTHER, true],
+    ['closed and opened again', UUID, true],
+    ['switched to another server without closing', OTHER, false]
+  ])('does not show its refusal in a dialog %s', async (_n, uuid, close) => {
+    await startSave()
+    answerNow = statusOf([])
+    await openFormElsewhere(uuid, close)
+
+    await act(async () => {
+      held(0)(undefined)
+    })
+
+    expect(form()).toEqual({ editing: 'new', code: '2', error: undefined, uuid })
+  })
+
+  it('does not show the refusal of a delete in a dialog opened since', async () => {
+    holdWrites = true
+    answerNow = statusOf([BUSY, SILENT])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+    await openFormElsewhere(OTHER, true)
+
+    await act(async () => {
+      held(0)(undefined)
+    })
+
+    expect(form().error).toBeUndefined()
+  })
+
+  it('does not show the refusal of a move in a dialog opened since', async () => {
+    holdWrites = true
+    answerNow = statusOf([BUSY, SILENT])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-down'))
+    })
+    await openFormElsewhere(UUID, true)
+
+    await act(async () => {
+      held(0)(undefined)
+    })
+
+    expect(form().error).toBeUndefined()
+  })
+
+  it('still closes the form and shows a refusal when nothing moved on', async () => {
+    await startSave()
+
+    await act(async () => {
+      held(0)(undefined)
+    })
+    expect(screen.getByTestId('server-faults-error')).toHaveTextContent('Main refused')
+    expect(form().editing).toBe('new')
+
+    await act(async () => {
+      dom.click(screen.getByTestId('fault-form-save-btn'))
+    })
+    await act(async () => {
+      held(1)(true)
+    })
+    expect(form().editing).toBeUndefined()
   })
 })

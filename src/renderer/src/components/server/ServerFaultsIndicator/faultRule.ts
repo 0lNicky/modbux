@@ -1,3 +1,4 @@
+import { deepEqual } from 'fast-equals'
 import {
   ServerFaultRuleSchema,
   type RegisterType,
@@ -191,4 +192,27 @@ export const moveRule = <T>(list: T[], index: number, step: -1 | 1): T[] => {
   const swapped = list[target]
   if (moving === undefined || swapped === undefined) return list
   return list.map((item, i) => (i === index ? swapped : i === target ? moving : item))
+}
+
+/**
+ * Where the rule an edit was opened on sits in `rules` now, or -1 where it
+ * cannot be told.
+ *
+ * The first matching rule decides a request, so equal rules at two places are
+ * two rules. The place it was opened at wins while it still holds an equal
+ * rule. Where the list changed around it, a single equal rule is the one, and
+ * none or several leave the question open.
+ */
+export const findEditedRule = (
+  rules: ServerFaultRule[],
+  target: ServerFaultRule | undefined,
+  openedAt: number | undefined
+): number => {
+  if (target === undefined) return -1
+  const at = openedAt === undefined ? undefined : rules[openedAt]
+  if (openedAt !== undefined && at !== undefined && deepEqual(at, target)) return openedAt
+  const first = rules.findIndex((rule) => deepEqual(rule, target))
+  return first !== -1 && first === rules.findLastIndex((rule) => deepEqual(rule, target))
+    ? first
+    : -1
 }

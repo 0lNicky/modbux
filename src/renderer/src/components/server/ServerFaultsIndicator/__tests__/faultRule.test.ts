@@ -4,6 +4,7 @@ import {
   describeFaultRule,
   draftFromRule,
   emptyDraft,
+  findEditedRule,
   moveRule,
   ruleFromDraft,
   secondsLeft,
@@ -208,5 +209,29 @@ describe('moveRule', () => {
   it('leaves the list as it is at either end', () => {
     expect(moveRule(list, 0, -1)).toEqual(list)
     expect(moveRule(list, 2, 1)).toEqual(list)
+  })
+})
+
+describe('findEditedRule', () => {
+  const A: ServerFaultRule = { action: { kind: 'exception', code: 6 } }
+  const B: ServerFaultRule = { unitId: 1, action: { kind: 'no_response' } }
+
+  it('keeps the place it was opened at while that place holds an equal rule', () => {
+    expect(findEditedRule([A, B, A], A, 2)).toBe(2)
+    expect(findEditedRule([A, B, A], A, 0)).toBe(0)
+  })
+
+  it('follows the one equal rule when its place changed', () => {
+    expect(findEditedRule([B, A], A, 0)).toBe(1)
+  })
+
+  it('cannot tell two equal rules apart once the place changed', () => {
+    expect(findEditedRule([B, A, A], A, 0)).toBe(-1)
+  })
+
+  it('finds nothing where no rule is equal, or nothing was picked', () => {
+    expect(findEditedRule([B], A, 0)).toBe(-1)
+    expect(findEditedRule([A], undefined, undefined)).toBe(-1)
+    expect(findEditedRule([A], A, 5)).toBe(0)
   })
 })
