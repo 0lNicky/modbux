@@ -63,9 +63,9 @@ export interface ServerConfigWrite {
  *
  * A server the config does not name a unit of is reset first, so whatever the
  * previous config left on it would not answer a master after this one is
- * loaded. A port the config carries goes through `setPort`, which refuses a
- * port another server holds and leaves main to refuse the rest. A refused port
- * does not stop the rest of the config. In RTU mode the port is not applied,
+ * loaded, and its fault rules go with it. A port the config carries goes
+ * through `setPort`, which refuses a port another server holds and leaves main
+ * to refuse the rest. A refused port does not stop the rest of the config. In RTU mode the port is not applied,
  * because no TCP server listens.
  */
 export const writeServerConfig = async (
@@ -84,6 +84,8 @@ export const writeServerConfig = async (
     }
 
     await serverZustand.resetServer(uuid)
+    // Fault rules belong to the server a file replaces, not to the one it loads.
+    await window.api.clearServerFaults(uuid)
     serverZustand.setName(config.name)
     serverZustand.setByteOrder(
       byteOrderOf({ littleEndian: config.littleEndian, byteSwap: config.byteSwap ?? false })

@@ -570,7 +570,8 @@ describe('each guarded channel got its own schema', () => {
     apply_privileged_port_fix: 'persist',
     set_server_endianness: { uuid: 'server-1', littleEndian: true, byteSwap: true },
     delete_server: 'server-1',
-    reset_server: 'server-1'
+    reset_server: 'server-1',
+    clear_server_faults: 'server-1'
   }
 
   const start = (): { sent: SentMessage[] } => {

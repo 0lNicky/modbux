@@ -25,12 +25,27 @@ const KNOWN_TOOLS = [
   'client_export_config',
   'client_import_config',
   'project_export',
-  'project_import'
+  'project_import',
+  'server_get_requests',
+  'server_set_faults',
+  'server_get_faults',
+  'server_clear_faults',
+  'server_drop_connections'
 ]
 
-const promptText = async (name: string, pointTable = TABLE): Promise<string> => {
+const POINT_TABLE_PROMPTS = [
+  'point_table_to_client',
+  'point_table_to_simulator',
+  'closed_loop_test'
+]
+
+const promptText = async (
+  name: string,
+  pointTable = TABLE,
+  argument = name === 'simulate_device_fault' ? 'situation' : 'pointTable'
+): Promise<string> => {
   const client = await connectInMemory(fakeContext())
-  const { messages } = await client.getPrompt({ name, arguments: { pointTable } })
+  const { messages } = await client.getPrompt({ name, arguments: { [argument]: pointTable } })
   const [message] = messages
   if (message?.content.type !== 'text') throw new Error('the prompt has no text message')
   expect(message.role).toBe('user')
@@ -38,21 +53,18 @@ const promptText = async (name: string, pointTable = TABLE): Promise<string> => 
 }
 
 describe('the prompts', () => {
-  it('lists three prompts that each take the point table', async () => {
+  it('lists three prompts that take the point table and one that takes the situation', async () => {
     const client = await connectInMemory(fakeContext())
 
     const { prompts } = await client.listPrompts()
 
-    expect(prompts.map((prompt) => prompt.name)).toEqual([
-      'point_table_to_client',
-      'point_table_to_simulator',
-      'closed_loop_test'
+    expect(prompts.map((prompt) => [prompt.name, prompt.arguments])).toEqual([
+      ...POINT_TABLE_PROMPTS.map((name) => [
+        name,
+        [expect.objectContaining({ name: 'pointTable', required: true })]
+      ]),
+      ['simulate_device_fault', [expect.objectContaining({ name: 'situation', required: true })]]
     ])
-    for (const prompt of prompts) {
-      expect(prompt.arguments).toEqual([
-        expect.objectContaining({ name: 'pointTable', required: true })
-      ])
-    }
   })
 
   it('refuses a prompt without a point table', async () => {
@@ -61,8 +73,8 @@ describe('the prompts', () => {
     await expect(client.getPrompt({ name: 'closed_loop_test', arguments: {} })).rejects.toThrow()
   })
 
-  it('carries the point table into every prompt', async () => {
-    for (const name of ['point_table_to_client', 'point_table_to_simulator', 'closed_loop_test']) {
+  it('carries the point table into every prompt that takes one', async () => {
+    for (const name of POINT_TABLE_PROMPTS) {
       expect(await promptText(name, '40007;Pressure;float')).toContain('40007;Pressure;float')
     }
   })
@@ -114,11 +126,47 @@ describe('the prompts', () => {
   })
 
   it('names only tools of the agreed surface', async () => {
-    for (const name of ['point_table_to_client', 'point_table_to_simulator', 'closed_loop_test']) {
+    for (const name of [...POINT_TABLE_PROMPTS, 'simulate_device_fault']) {
       const text = await promptText(name)
       const named = text.match(/\b(?:client|server|project)_[a-z_]+/g) ?? []
       expect(named.length).toBeGreaterThan(0)
       for (const tool of named) expect(KNOWN_TOOLS).toContain(tool)
     }
+  })
+
+  it('refuses simulate_device_fault without a situation', async () => {
+    const client = await connectInMemory(fakeContext())
+
+    await expect(
+      client.getPrompt({ name: 'simulate_device_fault', arguments: {} })
+    ).rejects.toThrow()
+  })
+
+  it('simulate_device_fault carries the situation and builds faults from rules and values', async () => {
+    const text = await promptText('simulate_device_fault', 'the meter goes quiet every few polls')
+
+    expect(text).toContain('the meter goes quiet every few polls')
+    for (const tool of [
+      'server_set_faults',
+      'server_drop_connections',
+      'server_set_values',
+      'server_get_requests',
+      'server_get_faults',
+      'server_clear_faults'
+    ]) {
+      expect(text).toContain(tool)
+    }
+    for (const kind of ['"no_response"', '"exception"', '"delay"', 'everyNth', 'forSeconds']) {
+      expect(text).toContain(kind)
+    }
+    for (const sentinel of ['0xFFFF', '0x8000', 'NaN']) expect(text).toContain(sentinel)
+  })
+
+  it('simulate_device_fault checks the fault fired after it applies it', async () => {
+    const text = await promptText('simulate_device_fault', 'offline')
+
+    expect(text.indexOf('call server_get_requests with sinceTimestamp')).toBeGreaterThan(
+      text.indexOf('Apply it')
+    )
   })
 })

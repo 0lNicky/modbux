@@ -12,15 +12,11 @@ export const SERVER_REQUEST_LOG_LIMIT = 1000
  */
 export type ServerRequestOutcome = 'ok' | 'exception' | 'no_response'
 
-/**
- * The fault rule that decided a request. Nothing writes it yet: the fault
- * injection that will is designed in `docs/design/mcp-debug-and-fault-injection.md`
- * under C.
- */
+/** The fault rule that decided a request, which `serve` in `vector.ts` records. */
 export interface ServerRequestFault {
   /** The rule's index in the server's list, 0 for the first. */
   rule: number
-  /** How long the reply was held back, for a delay rule. */
+  /** How long the reply was held back, for a delay rule. An RTU broadcast has no reply to hold. */
   delayMs?: number
 }
 

@@ -9,6 +9,7 @@ import TextField from '@mui/material/TextField'
 import Fade from '@mui/material/Fade'
 import Box from '@mui/material/Box'
 import ServerGrid from '@renderer/components/server/ServerGrid/ServerGrid'
+import ServerFaultsIndicator from '@renderer/components/server/ServerFaultsIndicator/ServerFaultsIndicator'
 import PrivilegedPortModal from '@renderer/components/server/PrivilegedPortModal/PrivilegedPortModal'
 import { ChangeEvent, useCallback } from 'react'
 
@@ -63,6 +64,7 @@ const Server = meme(() => {
             <SelectServer />
             <ServerName />
             <ServerConfig />
+            <ServerFaultsIndicator />
           </Box>
         </Box>
         <ServerGrid />

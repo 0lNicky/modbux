@@ -43,6 +43,7 @@ const answers: Record<string, (payload: unknown) => Promise<unknown>> = {
   getClientState: () => Promise.resolve(disconnected),
   getAppVersion: () => Promise.resolve('0.0.0-test'),
   getRtuServerStatus: () => Promise.resolve(false),
+  getServerFaults: () => Promise.resolve({}),
   listSerialPorts: () => Promise.resolve([])
 }
 
