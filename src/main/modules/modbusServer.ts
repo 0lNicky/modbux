@@ -49,6 +49,8 @@ export class ModbusServer {
   /** The requests each uuid answered, which both transports' vectors record. */
   private _requestLog: ServerRequestLog = new ServerRequestLog()
 
+  /** The uuids `hasServer` answers for besides the main server's. */
+  private _known: Set<string> = new Set()
   /** The fault rules of each uuid, which both transports' vectors ask. */
   private _faults: ServerFaults
 
@@ -107,31 +109,40 @@ export class ModbusServer {
     this._requestLog.list(uuid, filter)
 
   /**
-   * Whether main serves `uuid`: the main server always, another one while it
-   * has a TCP listener or the RTU server answers for it.
+   * Whether main has `uuid`: the main server always, and another one from the
+   * `createServer` or `startRtuServer` that named it until `deleteServer`.
+   *
+   * Not whether it listens. A server whose bind failed, or that RTU mode
+   * stopped, is still a server the user has and may give fault rules.
    */
-  public hasServer = (uuid: string): boolean =>
-    uuid === MAIN_SERVER_UUID || this._tcp.portOf(uuid) !== undefined || this._rtu.uuid === uuid
-
-  /** Replaces `uuid`'s fault rules, and answers the list now in effect. */
-  public setFaults = (uuid: string, rules: ServerFaultRule[]): ServerFaultRule[] =>
-    this._faults.set(uuid, rules)
+  public hasServer = (uuid: string): boolean => uuid === MAIN_SERVER_UUID || this._known.has(uuid)
 
   /**
-   * Replaces `uuid`'s fault rules only while the list is still at `version`, and
-   * answers whether it did with the list now in effect.
+   * Replaces `uuid`'s fault rules, and answers the list now in effect.
+   * `undefined` for a server main does not have, which gets none.
+   */
+  public setFaults = (uuid: string, rules: ServerFaultRule[]): ServerFaultRule[] | undefined =>
+    this.hasServer(uuid) ? this._faults.set(uuid, rules) : undefined
+
+  /**
+   * Replaces `uuid`'s fault rules only while main has the server and its list
+   * is still at `version`, and answers whether it did with the list now in
+   * effect.
    */
   public replaceFaults = (
     uuid: string,
     version: number,
     rules: ServerFaultRule[]
   ): ServerFaultWrite => {
-    const taken = this._faults.replace(uuid, version, rules)
-    return { taken, status: this._faults.snapshot(uuid) }
+    const taken = this.hasServer(uuid) && this._faults.replace(uuid, version, rules)
+    return { taken, status: this.getFaultStatus(uuid) }
   }
 
-  /** `uuid`'s fault rules with their counts, and the version of that list. */
-  public getFaultStatus = (uuid: string): ServerFaultStatus => this._faults.snapshot(uuid)
+  /** `uuid`'s fault rules with their counts, the version of that list, and whether main has the server. */
+  public getFaultStatus = (uuid: string): ServerFaultStatus => ({
+    ...this._faults.snapshot(uuid),
+    exists: this.hasServer(uuid)
+  })
 
   /** `uuid`'s fault rules, each with how often it matched and fired. */
   public getFaults = (uuid: string): ServerFaultRuleStatus[] => this._faults.status(uuid)
@@ -157,9 +168,11 @@ export class ModbusServer {
     return { error: `The server ${uuid} has no TCP listener` }
   }
 
-  /** Binds a listener for a uuid, and answers the port it took. */
-  public createServer = (params: CreateServerParams): Promise<number | undefined> =>
-    this._tcp.create(params)
+  /** Binds a listener for a uuid, and answers the port it took. The uuid is a server from here on, bound or not. */
+  public createServer = (params: CreateServerParams): Promise<number | undefined> => {
+    this._known.add(params.uuid)
+    return this._tcp.create(params)
+  }
 
   /**
    * Deletes a server for the given UUID, releasing everything held under it.
@@ -181,6 +194,7 @@ export class ModbusServer {
 
     this._registry.deleteUuid(uuid)
     this._requestLog.delete(uuid)
+    this._known.delete(uuid)
     this._faults.forget(uuid)
 
     await this._tcp.closeAndForget(uuid)
@@ -239,7 +253,10 @@ export class ModbusServer {
   public syncBools = (params: SyncBoolsParameters): void => this._registry.syncBools(params)
 
   /** Starts an RTU server on a serial port for the given UUID. */
-  public startRtuServer = (params: StartRtuServerParams): Promise<void> => this._rtu.start(params)
+  public startRtuServer = (params: StartRtuServerParams): Promise<void> => {
+    this._known.add(params.uuid)
+    return this._rtu.start(params)
+  }
 
   /** Stops the active RTU server if one is running. */
   public stopRtuServer = (): Promise<void> => this._rtu.stop()

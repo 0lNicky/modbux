@@ -82,6 +82,22 @@ describe('server_set_faults', () => {
     expect(context.serverFaults.list(MAIN_SERVER_UUID)).toEqual([])
   })
 
+  it('refuses a server deleted since, and gives its uuid no rules', async () => {
+    const context = fakeContext()
+    context.knownServers.add('second')
+    const client = await connectInMemory(context)
+    context.knownServers.delete('second')
+
+    const result = await client.callTool({
+      name: 'server_set_faults',
+      arguments: { uuid: 'second', rules: [{ action: NO_RESPONSE }] }
+    })
+
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toBe('No server has uuid second. server_list answers the uuids.')
+    expect(context.serverFaults.all()).toEqual({})
+  })
+
   it.each([
     ['a delay past the ceiling', { action: { kind: 'delay', ms: FAULT_DELAY_MAX_MS + 1 } }],
     ['exception code 0', { action: { kind: 'exception', code: 0 } }],

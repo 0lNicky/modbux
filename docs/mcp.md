@@ -79,7 +79,7 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 
 ## 故障注入
 
-讓 Modbux 的 Server 像故障的設備一樣回應主站，用來測上位系統遇到 exception、不回應、延遲、斷線時的行為。四個 tool 的對象都是 Modbux 自己的模擬器，不是裝置，所以都不受 "Allow writes to devices" 管。四個都不經過 renderer，Server 畫面拆到另一個視窗時也能用。`uuid` 省略時用主 Server；main 沒有服務的 `uuid` 回錯誤。
+讓 Modbux 的 Server 像故障的設備一樣回應主站，用來測上位系統遇到 exception、不回應、延遲、斷線時的行為。四個 tool 的對象都是 Modbux 自己的模擬器，不是裝置，所以都不受 "Allow writes to devices" 管。四個都不經過 renderer，Server 畫面拆到另一個視窗時也能用。`uuid` 省略時用主 Server；main 沒有的 Server（從沒建立，或已刪除）回錯誤。沒在監聽的 Server，例如 bind 失敗或 RTU 模式下停掉的，仍然算有。
 
 - `server_set_faults`：參數 `uuid`、`rules`。整份取代，回傳生效的清單。空清單等於清除。
 - `server_get_faults`：`readOnlyHint`。回目前的清單，每條規則加上 `matched`（它是第一條符合的請求數）、`triggered`（它實際決定的請求數）與 `forSeconds` 規則的 `expiresAt`（epoch 毫秒）。
@@ -116,3 +116,4 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 - 規則也能在 Server 畫面上編輯（main window 與拆出來的 Server 視窗都是）：**Fault rules** 按鈕開對話框，每條規則一行，可上移、下移、編輯、刪除，底部有新增、重新整理與全部清除。按鈕在有規則時顯示條數。
 - 畫面上的每次修改都是整份取代，與 `server_set_faults` 相同，所以每條規則的 `matched`、`triggered` 歸零，每個 `forSeconds` 的計時重新開始。對話框的次數只在開啟、規則變動與按下重新整理時讀取。
 - 畫面的寫入只在 main 的清單仍是對話框讀到的那份時才生效。清單在這之間被 `server_set_faults`、另一個視窗或 `forSeconds` 到期改過，寫入就不生效，對話框保留表單並改顯示目前的清單。`server_set_faults` 本身不做這個檢查。
+- Server 刪除後，main 不給它的 `uuid` 任何規則，畫面與 `server_set_faults` 都一樣。開著的對話框關掉表單、丟掉草稿、停用所有寫入，並說明 Server 已刪除。Undo 復原的 Server 從沒有規則開始。

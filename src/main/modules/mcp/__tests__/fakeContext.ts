@@ -198,7 +198,9 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
       readRegisters,
       getRequests: (uuid, filter) => serverRequests.list(uuid, filter),
       hasServer: (uuid) => knownServers.has(uuid),
-      setFaults: (uuid, rules) => serverFaults.set(uuid, rules),
+      // Main's own check: a uuid it does not know gets no rules.
+      setFaults: (uuid, rules) =>
+        knownServers.has(uuid) ? serverFaults.set(uuid, rules) : undefined,
       getFaults: (uuid) => serverFaults.status(uuid),
       clearFaults: (uuid) => serverFaults.clear(uuid),
       dropConnections
