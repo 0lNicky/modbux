@@ -22,6 +22,7 @@ import type {
   WriteOutcome
 } from '../../modbusClient'
 import { ServerRequestLog } from '../../modbusServer/requestLog'
+import type { LoggedTransaction } from '../../modbusClient/transactionLog'
 import { McpToolContext } from '../registry'
 import { createMcpServer } from '../server'
 
@@ -64,6 +65,9 @@ export interface FakeContext extends McpToolContext {
   stopPollingAndWait: ReturnType<typeof vi.fn<() => Promise<void>>>
   writeRaw: ReturnType<typeof vi.fn<(request: RawWriteRequest) => Promise<WriteOutcome>>>
   send: ReturnType<typeof vi.fn>
+  /** What the stand-in client has logged, oldest first. `mark` counts them. */
+  logTransaction: (transaction: LoggedTransaction) => void
+  transactions: ReturnType<typeof vi.fn<McpToolContext['client']['transactions']>>
 }
 
 /**
@@ -126,6 +130,22 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
   const writeRaw = vi.fn<(request: RawWriteRequest) => Promise<WriteOutcome>>(async () => ({
     written: true
   }))
+  const logged: LoggedTransaction[] = []
+  const transactions = vi.fn<McpToolContext['client']['transactions']>(
+    ({ limit, sinceTimestamp, failedOnly, afterMark } = {}) => {
+      const matching = logged
+        .slice(afterMark ?? 0)
+        .filter(
+          (transaction) =>
+            (sinceTimestamp === undefined || transaction.timestamp >= sinceTimestamp) &&
+            (!failedOnly ||
+              transaction.errorMessage !== undefined ||
+              transaction.timeout ||
+              transaction.exceptionCode !== undefined)
+        )
+      return limit === undefined ? matching : matching.slice(Math.max(0, matching.length - limit))
+    }
+  )
   const send = vi.fn(async (name: string, payload?: unknown) => {
     const answer = answers[name]
     if (answer) return answer(payload)
@@ -143,6 +163,8 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
       startPollingWhenSettled,
       stopPollingAndWait,
       writeRaw,
+      transactions,
+      transactionMark: () => logged.length,
       get state() {
         return clientState
       },
@@ -199,7 +221,11 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
     startPollingWhenSettled,
     stopPollingAndWait,
     writeRaw,
-    send
+    send,
+    transactions,
+    logTransaction: (transaction) => {
+      logged.push(transaction)
+    }
   }
 }
 

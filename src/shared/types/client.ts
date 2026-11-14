@@ -64,6 +64,9 @@ export type RegisterMapping = z.infer<typeof RegisterMappingSchema>
 //
 //
 // Transaction
+/** How many transactions main and the window each keep. */
+export const MAX_TRANSACTIONS = 1000
+
 export const TransactionSchema = z.object({
   id: z.string(),
   timestamp: z.number(),
@@ -84,7 +87,13 @@ export const TransactionSchema = z.object({
   timeout: z.boolean(),
   request: z.string(),
   responses: z.array(z.string()),
-  errorMessage: z.string().optional() // optional means it can be undefined
+  errorMessage: z.string().optional(), // optional means it can be undefined
+  /**
+   * Milliseconds from the request going out to the transaction being logged,
+   * and for a timeout the time waited. Undefined where the log never saw the
+   * request go out.
+   */
+  durationMs: z.number().optional()
 })
 
 export type Transaction = z.infer<typeof TransactionSchema>

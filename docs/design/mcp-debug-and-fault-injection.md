@@ -58,10 +58,10 @@
 
 1. **main 留存 transaction。** `TransactionLog` 保留最近的紀錄，上限與 renderer 的相同。送給畫面的行為不變。
 2. **回應耗時。** `Transaction` 加選填的 `durationMs`：從送出請求到 `log` 被呼叫的毫秒數。timeout 的請求，耗時就是等到 timeout 的時間。`TransactionGrid` 多一欄。
-3. **`client_get_transactions`。** `readOnlyHint`。參數：`limit`（預設 50）、`sinceTimestamp`、`failedOnly`。回傳每筆的欄位，加上 `exceptionCode`：response 的 function code 最高位元為 1 時，取其後一個 byte。
+3. **`client_get_transactions`。** `readOnlyHint`。參數：`limit`（預設 50）、`sinceTimestamp`、`failedOnly`。回傳每筆的欄位，加上 `exceptionCode`：response 的 function code 最高位元為 1 時，取其後一個 byte。紀錄裡的 frame 在每種通訊協定下都是 unit id、function code、資料、CRC：modbus-serial 的 TCP port 收到回應時先去掉 MBAP header 再往上傳，所以 function code 一律是第 1 個 byte。
 4. **失敗時附上證據。** `client_read_points` 與 `client_write` 失敗時，結果附上這次呼叫期間記下的失敗 transaction，含 `exceptionCode`。Client 同一時間只有一個擁有者，所以「這次呼叫期間」不會混到別人的請求。
 5. **掃描 tool 不附。** `client_scan_unit_ids` 的每個無回應 unit 都是一筆 timeout，附上去只是雜訊。要看就呼叫 `client_get_transactions`。
-6. **測試。** `TransactionLog` 的留存與上限、`exceptionCode` 的解析（TCP 與 RTU 的 frame 偏移不同，各一個案例）、tool 的篩選；一條 e2e：Client 讀一個 Server 沒有的 unit id，`client_read_points` 的錯誤裡有 exception 11 的 transaction。
+6. **測試。** `TransactionLog` 的留存與上限、`exceptionCode` 的解析（TCP 實際擷取的 frame 與 RTU 的 frame 各一個案例，偏移相同）、tool 的篩選；一條 e2e：Client 讀一個 Server 沒有的 unit id，`client_read_points` 的錯誤裡有 exception 11 的 transaction。
 
 ### B. Server 請求紀錄
 

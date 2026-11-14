@@ -25,6 +25,8 @@ export interface McpToolContext {
     | 'startPollingWhenSettled'
     | 'stopPollingAndWait'
     | 'writeRaw'
+    | 'transactions'
+    | 'transactionMark'
   >
   appState: Pick<
     AppState,

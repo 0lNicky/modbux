@@ -13,6 +13,7 @@ import {
   engineeringToRaw,
   engineeringValue,
   MAX_REGISTER_ADDRESS,
+  MAX_TRANSACTIONS,
   MAX_WRITE_BITS,
   PointAddressSchema,
   PointInterpolationSchema,
@@ -245,6 +246,34 @@ const unreadAddresses = (
     .sort((a, b) => a - b)
 }
 
+/** The default for `client_get_transactions`. */
+const DEFAULT_TRANSACTION_LIMIT = 50
+
+const clientGetTransactions = defineTool({
+  name: 'client_get_transactions',
+  title: 'Get the client transactions',
+  description: `The requests the client sent and what came back, oldest first, from the last 1000 (the Transactions grid holds the same). Each has the unit id, the address, the function code, the request and response frames as hex, the milliseconds from request to response (to the timeout, for a timeout), \`timeout\`, \`errorMessage\`, and \`exceptionCode\` where the device answered with a Modbus exception (1 illegal function, 2 illegal data address, 3 illegal data value, 4 device failure, 6 busy, 11 gateway target failed to respond). \`limit\` keeps the newest (default ${DEFAULT_TRANSACTION_LIMIT}), \`sinceTimestamp\` is epoch milliseconds, \`failedOnly\` keeps a timeout, an error or an exception. Use it to find out why a read returned nothing.`,
+  inputSchema: {
+    limit: z.number().int().min(1).max(MAX_TRANSACTIONS).default(DEFAULT_TRANSACTION_LIMIT),
+    sinceTimestamp: z.number().int().min(0).optional(),
+    failedOnly: z.boolean().default(false)
+  },
+  annotations: { readOnlyHint: true, openWorldHint: false },
+  run: async ({ limit, sinceTimestamp, failedOnly }, context) => {
+    const transactions = context.client.transactions({ limit, sinceTimestamp, failedOnly })
+    return toolResult({ count: transactions.length, transactions })
+  }
+})
+
+/**
+ * The failed transactions logged since `mark`, for a result that says a call
+ * failed. Only the call that owns the client files transactions, so these are
+ * its own.
+ */
+const failedSince = (context: McpToolContext, mark: number): { failedTransactions: object[] } => ({
+  failedTransactions: context.client.transactions({ afterMark: mark, failedOnly: true })
+})
+
 const clientReadPoints = defineTool({
   name: 'client_read_points',
   title: 'Read the client points',
@@ -265,6 +294,7 @@ const clientReadPoints = defineTool({
     const byteOrder = byteOrderOf(registerConfig)
     const { unitId } = context.appState.connectionConfig
 
+    const mark = context.client.transactionMark()
     const outcome = await context.client.read()
     if (!outcome.read) return toolError(READ_REFUSALS[outcome.reason])
 
@@ -291,7 +321,7 @@ const clientReadPoints = defineTool({
     }
     // Every group failed: nothing was read, and the result says why.
     if (errors.length > 0 && errors.length === outcome.groups.length) {
-      return { ...toolResult(answer), isError: true }
+      return { ...toolResult({ ...answer, ...failedSince(context, mark) }), isError: true }
     }
     return toolResult(answer)
   }
@@ -512,6 +542,7 @@ const clientWrite = defineTool({
       return toolError(WRITE_REFUSALS.not_connected)
     }
 
+    const mark = context.client.transactionMark()
     const outcome = await context.client.writeRaw(request.write)
     if (!outcome.written) return toolError(WRITE_REFUSALS[outcome.reason])
     const answer = {
@@ -524,7 +555,10 @@ const clientWrite = defineTool({
       ...request.encoded
     }
     if (outcome.error !== undefined) {
-      return { ...toolResult({ ...answer, error: outcome.error }), isError: true }
+      return {
+        ...toolResult({ ...answer, error: outcome.error, ...failedSince(context, mark) }),
+        isError: true
+      }
     }
     return toolResult(answer)
   }
@@ -622,6 +656,7 @@ export const clientTools: readonly McpTool[] = [
   clientConnect,
   clientDisconnect,
   clientReadPoints,
+  clientGetTransactions,
   clientStartPolling,
   clientStopPolling,
   // Point table tools
