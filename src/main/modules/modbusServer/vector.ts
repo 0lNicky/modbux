@@ -55,10 +55,37 @@ export interface VectorStores {
   faults: ServerFaults
 }
 
+/**
+ * The answers a delay rule is holding back for one listener.
+ *
+ * The transport that built the vector owns this and cancels it when it stops,
+ * so no callback runs after its socket or serial port is gone. Clearing or
+ * replacing the rules leaves it alone: a request already accepted under a
+ * delay rule is answered at its time.
+ */
+export class PendingReplies {
+  private _timers: Set<ReturnType<typeof setTimeout>> = new Set()
+
+  /** Runs `answer` after `ms`, unless `cancelAll` comes first. */
+  public schedule(answer: () => void, ms: number): void {
+    const timer = setTimeout(() => {
+      this._timers.delete(timer)
+      answer()
+    }, ms)
+    this._timers.add(timer)
+  }
+
+  public cancelAll(): void {
+    for (const timer of this._timers) clearTimeout(timer)
+    this._timers.clear()
+  }
+}
+
 /** What the vector is bound to: one uuid of the stores, on one transport. */
 interface VectorScope extends VectorStores {
   uuid: string
   transport: ServerTransport
+  pending: PendingReplies
 }
 
 /** One request, whole, as modbus-serial handed it over in one or more calls. */
@@ -104,6 +131,8 @@ type ServerAnswer<K extends RegisterType> =
 interface ServedRequest<K extends RegisterType> {
   answer: ServerAnswer<K>
   delayMs?: number
+  /** Where a delayed answer waits. */
+  pending: PendingReplies
 }
 
 /** A Modbus error as modbus-serial reads one: an `Error` carrying the code. */
@@ -139,14 +168,15 @@ const refuseUnit = <K extends RegisterType>(transport: ServerTransport): ServerA
  * the request rather than one per address.
  *
  * A fault rule is one of those checks. It is asked once the request is known
- * to be one the handler has not answered itself, and before anything the
- * server would answer on its own, so a rule for a unit this server does not
- * host or for an address past the top still decides. `exception` and
- * `no_response` return before the first write; `delay` lets the request run as
- * usual and holds back the answer, which `reply` sends late.
+ * to be one the handler has not answered itself and, on RTU, to be for a unit
+ * this server hosts. It comes before the rest of what the server would answer
+ * on its own, so on TCP a rule for a unit this server does not host or for an
+ * address past the top still decides. `exception` and `no_response` return
+ * before the first write; `delay` lets the request run as usual and holds back
+ * the answer, which `reply` sends late.
  */
 const serve = <K extends RegisterType>(
-  { registry, requestLog, faults, uuid, transport }: VectorScope,
+  { registry, requestLog, faults, uuid, transport, pending }: VectorScope,
   request: ServerRequestInput<K>,
   fallback: ServerDataValue<K>
 ): ServedRequest<K> => {
@@ -168,6 +198,13 @@ const serve = <K extends RegisterType>(
     if (count === 0) return { outcome: 'exception', code: ILLEGAL_DATA_ADDRESS, reply: false }
 
     const broadcast = isBroadcast(transport, unitId)
+
+    // On RS-485 an id this server does not host belongs to a real device on
+    // the bus, so no rule may answer for it: silence, as `refuseUnit` says.
+    if (transport === 'rtu' && !broadcast && !registry.hostsUnit(uuid, unitId)) {
+      return refuseUnit(transport)
+    }
+
     const applied = faults.decide(uuid, {
       unitId: request.unitId,
       registerType,
@@ -218,13 +255,13 @@ const serve = <K extends RegisterType>(
       return { outcome: 'ok', reply: true, read: () => fallback }
     }
 
-    // An address inside the range with no entry is a register nobody
-    // configured, and it answers 0 or false.
-    return {
-      outcome: 'ok',
-      reply: true,
-      read: (offset) => registry.read(uuid, unitId, registerType, address + offset) ?? fallback
-    }
+    // Read now, when the request is accepted, so a delay rule holds back the
+    // answer and not the read. An address inside the range with no entry is a
+    // register nobody configured, and it answers 0 or false.
+    const held = Array.from({ length: count }, (_, offset) =>
+      registry.read(uuid, unitId, registerType, address + offset)
+    )
+    return { outcome: 'ok', reply: true, read: (offset) => held[offset] ?? fallback }
   }
 
   const answer = decide()
@@ -241,7 +278,7 @@ const serve = <K extends RegisterType>(
     ...(request.values && { values: request.values }),
     ...(fault && { fault })
   })
-  return { answer, delayMs }
+  return { answer, delayMs, pending }
 }
 
 /**
@@ -310,12 +347,12 @@ const guarded = <K extends RegisterType, C>({ ok, refuse }: Replies<K, C>): Repl
  * collected one is.
  */
 const reply = <K extends RegisterType, C>(
-  { answer, delayMs }: ServedRequest<K>,
+  { answer, delayMs, pending }: ServedRequest<K>,
   callbacks: readonly C[],
   replies: Replies<K, C>
 ): void => {
   if (delayMs === undefined) return answerNow(answer, callbacks, replies)
-  setTimeout(() => answerNow(answer, callbacks, guarded(replies)), delayMs)
+  pending.schedule(() => answerNow(answer, callbacks, guarded(replies)), delayMs)
 }
 
 /**
@@ -496,9 +533,10 @@ const setCoils = (scope: VectorScope): IServiceVectorSet<boolean> => {
 export const createVector = (
   stores: VectorStores,
   uuid: string,
-  transport: ServerTransport
+  transport: ServerTransport,
+  pending: PendingReplies
 ): IServiceVector => {
-  const scope: VectorScope = { ...stores, uuid, transport }
+  const scope: VectorScope = { ...stores, uuid, transport, pending }
   return {
     getCoil: getBits(scope, 'coils'),
     getDiscreteInput: getBits(scope, 'discrete_inputs'),

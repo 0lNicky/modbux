@@ -2294,6 +2294,72 @@ describe('ModbusServer', () => {
       }
     }
 
+    describe('a delayed answer still pending', () => {
+      const delay = { action: { kind: 'delay' as const, ms: 500 } }
+
+      /** Asks the vector for one holding register of the hosted unit, and answers the callback. */
+      const askHeld = (vector: ServerVector) => {
+        const cb = vi.fn()
+        vector.getHoldingRegister(100, unitIdNumber, cb)
+        return cb
+      }
+
+      it('is cancelled when the server is deleted', async () => {
+        await server.createServer({ uuid, port: 5020 })
+        hostUnit()
+        server.setFaults(uuid, [delay])
+        const cb = askHeld(lastVector(ServerTCP))
+
+        await server.deleteServer(uuid)
+        await vi.advanceTimersByTimeAsync(5000)
+
+        expect(cb).not.toHaveBeenCalled()
+      })
+
+      it('is cancelled when the TCP listeners stop', async () => {
+        await server.createServer({ uuid, port: 5020 })
+        hostUnit()
+        server.setFaults(uuid, [delay])
+        const cb = askHeld(lastVector(ServerTCP))
+
+        await server.stopAllTcpServers()
+        await vi.advanceTimersByTimeAsync(5000)
+
+        expect(cb).not.toHaveBeenCalled()
+      })
+
+      it('is cancelled when the RTU server stops', async () => {
+        await server.startRtuServer({ uuid, serialConfig: rtuConfig })
+        hostUnit()
+        server.setFaults(uuid, [delay])
+        const cb = askHeld(lastVector(ServerSerial))
+
+        await server.stopRtuServer()
+        await vi.advanceTimersByTimeAsync(5000)
+
+        expect(cb).not.toHaveBeenCalled()
+      })
+
+      it('is delivered at its time though the rules were cleared or replaced', async () => {
+        await server.createServer({ uuid, port: 5020 })
+        hostUnit()
+        server.setFaults(uuid, [delay])
+        const vector = lastVector(ServerTCP)
+        const beforeClear = askHeld(vector)
+        server.clearFaults(uuid)
+        server.setFaults(uuid, [delay])
+        const beforeReplace = askHeld(vector)
+        server.setFaults(uuid, [{ action: { kind: 'no_response' } }])
+
+        await vi.advanceTimersByTimeAsync(499)
+        expect(beforeClear).not.toHaveBeenCalled()
+        await vi.advanceTimersByTimeAsync(1)
+
+        expect(beforeClear).toHaveBeenCalledExactlyOnceWith(null, 1)
+        expect(beforeReplace).toHaveBeenCalledExactlyOnceWith(null, 1)
+      })
+    })
+
     it('tells every window the list on each change', () => {
       server.setFaults(uuid, [rule])
       server.clearFaults(uuid)

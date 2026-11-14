@@ -11,6 +11,7 @@ import {
   createVector,
   GATEWAY_TARGET_FAILED,
   ILLEGAL_DATA_ADDRESS,
+  PendingReplies,
   SERVER_DEVICE_FAILURE,
   ServerTransport
 } from '../vector'
@@ -70,7 +71,7 @@ let requestLog: ServerRequestLog
 let faults: ServerFaults
 
 const vectorOn = (transport: ServerTransport) =>
-  createVector({ registry, requestLog, faults }, uuid, transport)
+  createVector({ registry, requestLog, faults }, uuid, transport, new PendingReplies())
 
 /** Runs `handle`, which sends one frame through a handler, and answers what came back. */
 const send = async (handle: (callback: HandlerCallback) => void): Promise<Reply> => {
@@ -937,14 +938,43 @@ describe.each<ServerTransport>(['tcp', 'rtu'])('fault rules on %s', (transport) 
     expect(requests()).toEqual([expect.objectContaining({ exceptionCode: 5, fault: { rule: 1 } })])
   })
 
-  it('applies a rule to a unit the server does not host, ahead of the server’s own answer', async () => {
-    faults.set(uuid, [{ unitId: 5, action: { kind: 'exception', code: 6 } }])
+  it.each([
+    [
+      'changed',
+      () => {
+        registry.write('holding_registers', uuid, '1', 10, 99)
+        registry.write('coils', uuid, '1', 10, false)
+      }
+    ],
+    ['deleted', () => registry.deleteUuid(uuid)],
+    [
+      'replaced by a config load',
+      () => {
+        registry.clearData(uuid)
+        hostRegister('1', 10, 1234)
+        hostCoil('1', 10, false)
+      }
+    ]
+  ])(
+    'answers a delayed read with what was held when it arrived, though the data was %s during the wait',
+    async (_name, during) => {
+      hostRegister('1', 12, 9)
+      hostCoil('1', 12, true)
+      faults.set(uuid, [{ action: { kind: 'delay', ms: DELAY_MS } }])
+      const vector = vectorOn(transport)
 
-    const replies = sendKeepingEvery(fc3(vectorOn(transport), 5, 10, 2))
-    await vi.advanceTimersByTimeAsync(0)
+      const words = sendKeepingEvery(fc3(vector, 1, 10, 3))
+      const bits = sendKeepingEvery(fc1(vector, 1, 10, 3))
+      await vi.advanceTimersByTimeAsync(0)
+      during()
+      await vi.advanceTimersByTimeAsync(DELAY_MS)
 
-    expect(replies).toEqual([{ exception: 6 }])
-  })
+      const [wordReply] = words
+      const [bitReply] = bits
+      expect(wordReply && wordsOf(wordReply)).toEqual([7, 0, 9])
+      expect(bitReply && bitsOf(bitReply, 3)).toEqual([true, false, true])
+    }
+  )
 
   it('leaves a zero-length FC16 to the handler’s own exception, answered once', async () => {
     faults.set(uuid, [{ action: { kind: 'delay', ms: DELAY_MS } }])
@@ -975,6 +1005,60 @@ describe.each<ServerTransport>(['tcp', 'rtu'])('fault rules on %s', (transport) 
     )
     expect(cb).toHaveBeenCalledTimes(2)
   })
+})
+
+describe('fault rules and a unit the server does not host', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    hostRegister('1', 10, 7)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('lets a rule answer for it on TCP, ahead of exception 11', async () => {
+    faults.set(uuid, [{ unitId: 5, action: { kind: 'exception', code: 6 } }])
+
+    const replies = sendKeepingEvery(fc3(vectorOn('tcp'), 5, 10, 2))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(replies).toEqual([{ exception: 6 }])
+    expect(requests()).toEqual([
+      expect.objectContaining({
+        unitId: 5,
+        outcome: 'exception',
+        exceptionCode: 6,
+        fault: { rule: 0 }
+      })
+    ])
+  })
+
+  // The id belongs to a real device on the shared bus, so any frame from the
+  // simulator collides with that device's answer.
+  it.each([
+    { kind: 'exception', code: 6 } as const,
+    { kind: 'no_response' } as const,
+    { kind: 'delay', ms: DELAY_MS } as const
+  ])(
+    'stays silent on RTU under a $kind rule, and records it as it would without one',
+    async (action) => {
+      faults.set(uuid, [{ action }])
+      const vector = vectorOn('rtu')
+
+      const read = sendKeepingEvery(fc3(vector, 5, 10, 2))
+      const write = sendKeepingEvery(fc16(vector, 5, 10, [1, 2]))
+      await vi.advanceTimersByTimeAsync(DELAY_MS * 4)
+
+      expect([read, write]).toEqual([[], []])
+      expect(requests()).toEqual([
+        expect.objectContaining({ unitId: 5, direction: 'read', outcome: 'no_response' }),
+        expect.objectContaining({ unitId: 5, direction: 'write', outcome: 'no_response' })
+      ])
+      for (const request of requests()) expect(request).not.toHaveProperty('fault')
+      expect(faults.status(uuid)).toEqual([expect.objectContaining({ matched: 0, triggered: 0 })])
+    }
+  )
 })
 
 describe('fault rules and an RTU broadcast', () => {

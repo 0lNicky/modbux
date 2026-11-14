@@ -3,7 +3,7 @@ import { ServerTCP } from 'modbus-serial'
 import net from 'net'
 import { Windows } from '../../windows'
 import { emitServerMessage } from './messages'
-import { createVector, VectorStores } from './vector'
+import { createVector, PendingReplies, VectorStores } from './vector'
 
 const isPort = (port: number): boolean => Number.isInteger(port) && port >= 1 && port <= 65535
 
@@ -20,6 +20,12 @@ interface TcpServersParams extends VectorStores {
   windows: Windows
 }
 
+/** A listener and the delayed answers its vector is holding back. */
+interface Listener {
+  server: ServerTCP
+  pending: PendingReplies
+}
+
 /**
  * The TCP listeners, one per uuid, and the port each one is on.
  *
@@ -32,7 +38,7 @@ export class TcpServers {
   private _stores: VectorStores
 
   private _port: Map<string, number> = new Map()
-  private _servers: Map<string, ServerTCP> = new Map()
+  private _servers: Map<string, Listener> = new Map()
 
   constructor({ windows, ...stores }: TcpServersParams) {
     this._windows = windows
@@ -73,9 +79,9 @@ export class TcpServers {
    * This is the one place outside modbus-serial that reads it.
    */
   public dropConnections(uuid: string): number | undefined {
-    const server = this._servers.get(uuid)
-    if (!server) return undefined
-    const sockets = [...server.socks.keys()]
+    const listener = this._servers.get(uuid)
+    if (!listener) return undefined
+    const sockets = [...listener.server.socks.keys()]
     for (const socket of sockets) socket.destroy()
     return sockets.length
   }
@@ -84,13 +90,15 @@ export class TcpServers {
    * Closes the listener registered for a UUID and forgets it, if there is one.
    *
    * `ServerTCP.close` destroys every socket in `modbus.socks`, so whoever was
-   * connected gets a FIN.
+   * connected gets a FIN, and the answers a delay rule was holding back for
+   * them are cancelled first.
    */
   public async closeAndForget(uuid: string): Promise<void> {
-    const existingServer = this._servers.get(uuid)
-    if (!existingServer) return
+    const existing = this._servers.get(uuid)
+    if (!existing) return
+    existing.pending.cancelAll()
     await new Promise<void>((resolve) => {
-      existingServer.close((err) => {
+      existing.server.close((err) => {
         if (err)
           emitServerMessage(this._windows, {
             message: 'Error closing server',
@@ -116,7 +124,8 @@ export class TcpServers {
     uuid: string,
     port: number
   ): Promise<{ ok: boolean; errorCode?: string }> {
-    const server = new ServerTCP(createVector(this._stores, uuid, 'tcp'), {
+    const pending = new PendingReplies()
+    const server = new ServerTCP(createVector(this._stores, uuid, 'tcp', pending), {
       host: '0.0.0.0',
       port
     })
@@ -141,7 +150,7 @@ export class TcpServers {
       return result
     }
 
-    this._servers.set(uuid, server)
+    this._servers.set(uuid, { server, pending })
     this._port.set(uuid, port)
     return result
   }

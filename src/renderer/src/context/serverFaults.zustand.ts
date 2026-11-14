@@ -16,7 +16,15 @@ export interface ServerFaultsZustand {
 
 export const useServerFaultsZustand = create<ServerFaultsZustand>()(() => ({ rules: {} }))
 
+/**
+ * What `server_faults` said while the snapshot below was in flight, by uuid.
+ * Those lists are newer than the snapshot, so it does not overwrite them.
+ * Undefined once the snapshot has landed.
+ */
+let heardWhileLoading: Record<string, ServerFaultRule[]> | undefined = {}
+
 onEvent('server_faults', ({ uuid, rules }) => {
+  if (heardWhileLoading) heardWhileLoading[uuid] = rules
   useServerFaultsZustand.setState((z) => ({ rules: { ...z.rules, [uuid]: rules } }))
 })
 
@@ -25,8 +33,10 @@ onEvent('server_faults', ({ uuid, rules }) => {
  * window that loads after the last one, or reloads, has heard none of them.
  */
 const readServerFaults = async (): Promise<void> => {
-  const rules = await window.api.getServerFaults()
-  useServerFaultsZustand.setState({ rules })
+  const snapshot = await window.api.getServerFaults()
+  const heard = heardWhileLoading ?? {}
+  heardWhileLoading = undefined
+  useServerFaultsZustand.setState({ rules: { ...snapshot, ...heard } })
 }
 
 void readServerFaults()

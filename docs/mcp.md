@@ -106,9 +106,11 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 - 省略的條件表示不限。請求碰到 `addressRange` 內任何一個位址就算符合。
 - 每個請求依序比對清單，第一條所有條件都符合的規則決定它，所以清單的順序就是優先順序。
 - `everyNth: N` 時，規則只決定它符合的第 N、2N、… 個請求；其餘的照常回應，也不會交給後面的規則。
-- `exception` 回該 exception code，`no_response` 不回應；兩者的寫入都不寫進 Server。`delay` 照常讀寫，晚 `ms` 毫秒才回應。`delay` 的上限與一份清單的規則數上限寫在 tool 說明裡。
-- 規則在 Server 自己的檢查之前生效，所以對 Server 沒有的 unit id 或超出範圍的位址也有效。
+- `exception` 回該 exception code，`no_response` 不回應；兩者的寫入都不寫進 Server。`delay` 在請求到達時照常讀寫，回應的是那一刻讀到的值，晚 `ms` 毫秒才送出；等待期間值改變、被刪除或載入設定檔，都不影響這個回應。`delay` 的上限與一份清單的規則數上限寫在 tool 說明裡。
+- TCP 上，規則在 Server 自己的檢查之前生效，所以對 Server 沒有的 unit id 或超出範圍的位址也有效。
+- RTU 上，Server 沒有的 unit id 一律不回應，不經過規則，也不計入 `matched`：那個 id 屬於匯流排上的真實設備，模擬器回任何 frame 都會與它衝突。
 - RTU 的 broadcast（unit 0）不論規則都不回應；`exception` 或 `no_response` 規則會讓 broadcast 寫入一個位址都不寫。
+- 已排程的延遲回應：清除或取代規則不會取消，照原定時間送出；停止或刪除該 Server（包括切換 TCP／RTU、改 port）會取消，不再送出。
 - `forSeconds` 秒後規則自動移除。
 - 規則只存在 main 的記憶體：重開 app、刪除 Server、對該 Server 載入設定檔或 project 檔時清空。
 - Server 有規則時，Server 畫面（main window 與拆出來的 Server 視窗都是）顯示規則條數與 **Clear faults** 按鈕。
