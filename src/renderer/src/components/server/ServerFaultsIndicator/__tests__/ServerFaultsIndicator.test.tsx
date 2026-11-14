@@ -73,16 +73,16 @@ describe('the fault rule store', () => {
 })
 
 describe('the fault indicator', () => {
-  it('draws nothing while the shown server has no rules', () => {
+  it('is drawn while the shown server has no rules, and says what it opens', () => {
     useServerFaultsZustand.setState({ rules: { [SECOND_UUID]: [{ action: NO_RESPONSE }] } })
 
     render(<ServerFaultsIndicator />)
 
-    expect(screen.queryByTestId('server-faults-indicator')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('server-faults-clear-btn')).not.toBeInTheDocument()
+    expect(screen.getByTestId('server-faults-indicator')).toHaveTextContent('Fault rules')
+    expect(screen.getByTestId('server-faults-indicator')).toHaveClass('MuiButton-colorInherit')
   })
 
-  it('counts the shown server’s rules', () => {
+  it('counts the shown server’s rules, in the warning color', () => {
     render(<ServerFaultsIndicator />)
 
     act(() => {
@@ -92,11 +92,17 @@ describe('the fault indicator', () => {
       })
     })
     expect(screen.getByTestId('server-faults-indicator')).toHaveTextContent('2 fault rules')
+    expect(screen.getByTestId('server-faults-indicator')).toHaveClass('MuiButton-colorWarning')
 
     act(() => {
       fireEvent('server_faults', { uuid: MAIN_SERVER_UUID, rules: [{ action: NO_RESPONSE }] })
     })
     expect(screen.getByTestId('server-faults-indicator')).toHaveTextContent('1 fault rule')
+
+    act(() => {
+      fireEvent('server_faults', { uuid: MAIN_SERVER_UUID, rules: [] })
+    })
+    expect(screen.getByTestId('server-faults-indicator')).toHaveTextContent('Fault rules')
   })
 
   it('follows the selection to another server’s rules', () => {
@@ -110,17 +116,21 @@ describe('the fault indicator', () => {
     expect(screen.getByTestId('server-faults-indicator')).toHaveTextContent('1 fault rule')
   })
 
-  it('asks main to clear the shown server’s rules, and goes once main says they are gone', () => {
-    useServerFaultsZustand.setState({ rules: { [SECOND_UUID]: [{ action: NO_RESPONSE }] } })
+  it('opens the dialog for the shown server and asks main for its status', () => {
     useServerZustand.setState({ selectedUuid: SECOND_UUID })
     render(<ServerFaultsIndicator />)
 
-    click.click(screen.getByTestId('server-faults-clear-btn'))
-    expect(calls).toEqual([{ method: 'clearServerFaults', payload: SECOND_UUID }])
+    click.click(screen.getByTestId('server-faults-indicator'))
 
-    act(() => {
-      fireEvent('server_faults', { uuid: SECOND_UUID, rules: [] })
-    })
-    expect(screen.queryByTestId('server-faults-indicator')).not.toBeInTheDocument()
+    expect(calls).toEqual([{ method: 'getServerFaultStatus', payload: SECOND_UUID }])
+    expect(screen.getByTestId('server-faults-dialog')).toBeInTheDocument()
+  })
+
+  it('has no clear button of its own any more', () => {
+    useServerFaultsZustand.setState({ rules: { [MAIN_SERVER_UUID]: [{ action: NO_RESPONSE }] } })
+
+    render(<ServerFaultsIndicator />)
+
+    expect(screen.queryByTestId('server-faults-clear-btn')).not.toBeInTheDocument()
   })
 })

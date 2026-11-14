@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import { describe, expect, it } from 'vitest'
-import { FAULT_DELAY_MAX_MS, MAIN_SERVER_UUID } from '@shared'
-import { MAX_FAULT_RULES } from '../tools/serverFaults'
+import { FAULT_DELAY_MAX_MS, MAIN_SERVER_UUID, MAX_FAULT_RULES } from '@shared'
 import { connectInMemory, fakeContext, jsonOf, textOf } from './fakeContext'
 
 const NO_RESPONSE = { kind: 'no_response' } as const

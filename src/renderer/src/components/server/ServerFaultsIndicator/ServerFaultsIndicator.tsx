@@ -1,49 +1,46 @@
 import BugReport from '@mui/icons-material/BugReport'
-import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
 import { meme } from '@renderer/components/shared/inputs/meme'
 import { useServerFaultsZustand } from '@renderer/context/serverFaults.zustand'
 import { useServerZustand } from '@renderer/context/server.zustand'
 import { useCallback } from 'react'
+import ServerFaultsDialog from './ServerFaultsDialog'
+import { useServerFaultsDialogZustand } from './serverFaultsDialog.zustand'
 
 /**
- * The fault rules the shown server answers with, counted, and the button that
- * removes them. Drawn only while there is at least one, because a server with
- * rules answers masters differently from what its registers say.
+ * The button that opens the fault rules of the shown server. Always drawn: the
+ * rules are the fallback for when no AI can set them over MCP, so a server with
+ * none has to offer a way to add one.
  *
- * The rules are set over MCP and live in main, so the clear goes to main and
- * the list comes back through `server_faults`.
+ * With rules it counts them in the warning color, because a server with rules
+ * answers masters differently from what its registers say.
  */
 const ServerFaultsIndicator = meme(() => {
   const selectedUuid = useServerZustand((z) => z.selectedUuid)
   const ruleCount = useServerFaultsZustand((z) => z.rules[selectedUuid]?.length ?? 0)
 
-  const clearFaults = useCallback((): void => {
-    void window.api.clearServerFaults(selectedUuid)
+  const openDialog = useCallback((): void => {
+    useServerFaultsDialogZustand.getState().show(selectedUuid)
   }, [selectedUuid])
 
-  if (ruleCount === 0) return null
-
   return (
-    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-      <Chip
-        data-testid="server-faults-indicator"
-        icon={<BugReport />}
-        color="warning"
-        label={ruleCount === 1 ? '1 fault rule' : `${ruleCount} fault rules`}
-        title="Fault rules set over MCP decide how this server answers"
-      />
+    <>
       <Button
-        data-testid="server-faults-clear-btn"
+        data-testid="server-faults-indicator"
         size="small"
-        variant="outlined"
-        color="warning"
-        onClick={clearFaults}
+        variant={ruleCount === 0 ? 'outlined' : 'contained'}
+        color={ruleCount === 0 ? 'inherit' : 'warning'}
+        startIcon={<BugReport />}
+        onClick={openDialog}
       >
-        Clear faults
+        {ruleCount === 0
+          ? 'Fault rules'
+          : ruleCount === 1
+            ? '1 fault rule'
+            : `${ruleCount} fault rules`}
       </Button>
-    </Box>
+      <ServerFaultsDialog />
+    </>
   )
 })
 

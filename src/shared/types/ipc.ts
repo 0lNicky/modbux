@@ -33,7 +33,9 @@ import type {
   RendererCommandReply,
   McpStatus,
   ServerFaultRule,
-  ServerFaults
+  ServerFaultRuleStatus,
+  ServerFaults,
+  SetServerFaultsParams
 } from '@shared'
 // `import type`, because shared is the one module all three processes compile
 // against and notistack is a renderer dependency. `variant` below is the only
@@ -110,7 +112,9 @@ export const IPC_CHANNELS = [
   'set_mcp_allow_writes',
   'regenerate_mcp_token',
   'get_server_faults',
-  'clear_server_faults'
+  'clear_server_faults',
+  'set_server_faults',
+  'get_server_fault_status'
 ] as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[number]
@@ -427,6 +431,23 @@ export interface IpcHandlerSpec {
   ['clear_server_faults']: {
     args: [string]
     return: void
+  }
+
+  /**
+   * Replace a server's whole fault list, the way `server_set_faults` does over MCP.
+   *
+   * Every rule's counts restart and every `forSeconds` clock restarts. Answers
+   * nothing: the list now in effect comes back as `server_faults`.
+   */
+  ['set_server_faults']: {
+    args: [SetServerFaultsParams]
+    return: void
+  }
+
+  /** A server's (UUID) fault rules in order, each with what it has done, as `server_get_faults` answers. */
+  ['get_server_fault_status']: {
+    args: [string]
+    return: ServerFaultRuleStatus[]
   }
 }
 
