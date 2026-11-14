@@ -145,7 +145,7 @@
 **Channel。**
 
 - `set_server_faults`：`uuid`、`version` 與 `rules`，整份取代。帶物件，所以要有 schema。回 `{ taken, status }`，payload 不合格時回 `undefined`。
-- `get_server_fault_status`：`uuid`，回 `{ version, rules }`，`rules` 是 `ServerFaultRuleStatus[]`。
+- `get_server_fault_status`：`uuid`，回 `{ version, rules, exists }`，`rules` 是 `ServerFaultRuleStatus[]`，`exists` 說 main 有沒有這台 Server。
 - 清除沿用 `clear_server_faults`，清單的變動沿用 `server_faults` 事件，事件帶 `version`。
 
 **清單的版本。** 畫面送出的清單是從它讀到的清單改出來的，main 的清單若已經變了，整份取代會讓刪掉的規則復活、或丟掉別處加的規則。所以：
@@ -155,6 +155,13 @@
 - `server_set_faults` 不比對版本，照舊無條件取代。
 - 對話框在第一次狀態還沒回來、有狀態查詢在途中、或另一筆寫入還沒回來時，不提供寫入：新增、上移、下移、刪除與表單的儲存都停用。所以同一個對話框的寫入一筆接一筆，每筆都從前一筆回覆的清單改出來。
 - 寫入被 main 以版本拒絕時，表單與草稿留著，錯誤訊息說規則已經變了，對話框改顯示 main 回的清單。
+
+**已刪除的 Server。** 刪除後 main 對這個 uuid 回的是新版本的空清單，只比對版本會讓刷新後的儲存把規則放回去，Undo 以同一個 uuid 復原時規則就會生效。所以：
+
+- main 記得有哪些 Server：主 Server 一直都有，其他的從 `createServer` 或 `startRtuServer` 起算，到 `deleteServer` 為止。這不看 TCP listener，bind 失敗或在 RTU 模式下停掉的 Server 仍然可以設規則。
+- `ModbusServer.setFaults`（`server_set_faults` 用的）與 `ModbusServer.replaceFaults`（`set_server_faults` 用的）在同一個同步步驟裡先問 main 有沒有這台 Server，沒有就什麼都不改。
+- 狀態的 `exists` 為 false 時，對話框關掉表單、丟掉草稿、停用所有寫入，並說明 Server 已刪除。之後的刷新若看到 Server 又在了，就恢復寫入。
+- Undo 復原的 Server 從沒有規則開始，因為刪除時清單已清空，之後也沒有路徑能給它規則。
 
 **次數不自動更新。** 開啟對話框、收到 `server_faults`、按重新整理時各讀一次 `get_server_fault_status`。
 

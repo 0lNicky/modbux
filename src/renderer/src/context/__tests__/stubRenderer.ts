@@ -47,6 +47,7 @@ const answers: Record<string, (payload: unknown) => Promise<unknown>> = {
     const { version, rules } = parsed.data
     const status = (now: number, held: typeof rules): ServerFaultStatus => ({
       version: now,
+      exists: true,
       rules: held.map((rule) => ({ ...rule, matched: 0, triggered: 0 }))
     })
     return Promise.resolve(
@@ -64,7 +65,7 @@ const answers: Record<string, (payload: unknown) => Promise<unknown>> = {
   getRtuServerStatus: () => Promise.resolve(false),
   getServerFaults: () => Promise.resolve({}),
   getServerFaultStatus: (): Promise<ServerFaultStatus> =>
-    Promise.resolve({ version: 0, rules: [] }),
+    Promise.resolve({ version: 0, rules: [], exists: true }),
   listSerialPorts: () => Promise.resolve([])
 }
 

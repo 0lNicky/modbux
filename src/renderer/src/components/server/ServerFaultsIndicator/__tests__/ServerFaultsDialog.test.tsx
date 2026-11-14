@@ -28,6 +28,7 @@ const statusOf = (rules: ServerFaultRule[]): ServerFaultStatus => {
   lastVersion += 1
   return {
     version: lastVersion,
+    exists: true,
     rules: rules.map((rule, i) => ({
       ...rule,
       matched: 10 + i,
@@ -64,7 +65,7 @@ const mainWrites = ({
   version: number
   rules: ServerFaultRule[]
 }): ServerFaultWrite => {
-  if (version !== main.version) return { taken: false, status: main }
+  if (!main.exists || version !== main.version) return { taken: false, status: main }
   main = statusOf(rules)
   fireEvent('server_faults', { uuid: UUID, version: main.version, rules })
   return { taken: true, status: main }
@@ -205,7 +206,7 @@ describe('what the dialog shows', () => {
   it('reads again when refresh is pressed, and shows the new counts', async () => {
     mainHolds([BUSY])
     await openDialog()
-    main = { version: main.version, rules: [{ ...BUSY, matched: 99, triggered: 98 }] }
+    main = { ...main, rules: [{ ...BUSY, matched: 99, triggered: 98 }] }
 
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-refresh-btn'))
@@ -1136,5 +1137,85 @@ describe('a write built from a list main no longer holds', () => {
       { uuid: UUID, rules: [SLOW] }
     ])
     expect(main.rules.map(({ action }) => action.kind)).toEqual(['delay'])
+  })
+})
+
+// Main answers a deleted server's status with an empty list at a current
+// version, so the version alone would let the dialog write rules back onto it.
+describe('a server deleted while its dialog is open', () => {
+  const DELETED_MESSAGE = 'This server was deleted, so its fault rules cannot be changed.'
+
+  /** Main deletes the server: an empty list at a new version, which no longer exists. */
+  const mainDeletesTheServer = (): void => {
+    main = { ...statusOf([]), exists: false }
+  }
+
+  const openForm = async (): Promise<void> => {
+    mainHolds([BUSY])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-add-btn'))
+    })
+    type('fault-form-code', '6')
+  }
+
+  it('closes the form and drops its draft once the refresh says so, and offers no write', async () => {
+    await openForm()
+
+    mainDeletesTheServer()
+    await act(async () => {
+      announce(main)
+    })
+
+    expect(screen.queryByTestId('fault-form-code')).not.toBeInTheDocument()
+    expect(useServerFaultsDialogZustand.getState().draft.code).toBe('')
+    expect(screen.getByTestId('server-faults-error')).toHaveTextContent(DELETED_MESSAGE)
+    expect(screen.getByTestId('server-faults-add-btn')).toBeDisabled()
+    expect(screen.getByTestId('server-faults-clear-all-btn')).toBeDisabled()
+
+    await act(async () => {
+      useServerFaultsDialogZustand.getState().edit('new')
+      useServerFaultsDialogZustand.getState().setDraft({ code: '6' })
+    })
+    expect(screen.getByTestId('fault-form-save-btn')).toBeDisabled()
+    await act(async () => {
+      await useServerFaultsDialogZustand.getState().save()
+    })
+    expect(sets()).toEqual([])
+  })
+
+  it('closes the form and drops its draft when main refuses the save because the server is gone', async () => {
+    await openForm()
+    // Deleted, and its server_faults has not arrived yet.
+    mainDeletesTheServer()
+
+    await act(async () => {
+      dom.click(screen.getByTestId('fault-form-save-btn'))
+    })
+
+    expect(sets()).toEqual([
+      { uuid: UUID, rules: [BUSY, { action: { kind: 'exception', code: 6 } }] }
+    ])
+    expect(main.rules).toEqual([])
+    expect(screen.queryByTestId('fault-form-code')).not.toBeInTheDocument()
+    expect(useServerFaultsDialogZustand.getState().draft.code).toBe('')
+    expect(screen.getByTestId('server-faults-error')).toHaveTextContent(DELETED_MESSAGE)
+    expect(screen.getByTestId('server-faults-add-btn')).toBeDisabled()
+  })
+
+  it('takes writes again once a refresh finds the server restored by undo', async () => {
+    await openForm()
+    mainDeletesTheServer()
+    await act(async () => {
+      announce(main)
+    })
+
+    mainHolds([])
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-refresh-btn'))
+    })
+
+    expect(screen.queryByTestId('server-faults-error')).not.toBeInTheDocument()
+    expect(screen.getByTestId('server-faults-add-btn')).toBeEnabled()
   })
 })

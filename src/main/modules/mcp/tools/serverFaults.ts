@@ -36,9 +36,11 @@ const serverSetFaults = defineTool({
     openWorldHint: false
   },
   run: async ({ uuid, rules }, context) => {
-    const target = targetOf(uuid, context)
-    if (!target) return toolError(unknownServer(uuid ?? MAIN_SERVER_UUID))
-    return toolResult({ uuid: target, rules: context.server.setFaults(target, rules) })
+    // `setFaults` asks whether main has the server in the same step as it sets.
+    const target = uuid ?? MAIN_SERVER_UUID
+    const set = context.server.setFaults(target, rules)
+    if (!set) return toolError(unknownServer(target))
+    return toolResult({ uuid: target, rules: set })
   }
 })
 

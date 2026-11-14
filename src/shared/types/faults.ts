@@ -78,6 +78,8 @@ export interface ServerFaultStatus {
   /** The version of this list, which `set_server_faults` sends back. */
   version: number
   rules: ServerFaultRuleStatus[]
+  /** False for a server main does not have, deleted or never created, which takes no rules. */
+  exists: boolean
 }
 
 /** What `set_server_faults` answers for a payload it accepted. */

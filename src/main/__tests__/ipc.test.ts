@@ -690,7 +690,7 @@ describe('the read channel', () => {
 // same `ModbusServer`, through `setFaults` and `getFaults`, which these leave alone.
 describe('the fault rule channels', () => {
   const RULE = { unitId: 4, action: { kind: 'exception', code: 6 } } as const
-  const STATUS = { version: 7, rules: [{ ...RULE, matched: 2, triggered: 1 }] }
+  const STATUS = { version: 7, rules: [{ ...RULE, matched: 2, triggered: 1 }], exists: true }
 
   const startWith = (): {
     replaceFaults: ReturnType<typeof vi.fn>

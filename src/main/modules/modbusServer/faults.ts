@@ -128,7 +128,7 @@ export class ServerFaults {
   }
 
   /** The rules `uuid` holds now with what each has done, and the version of that list. */
-  public snapshot(uuid: string): ServerFaultStatus {
+  public snapshot(uuid: string): Omit<ServerFaultStatus, 'exists'> {
     return { version: this.version(uuid), rules: this.status(uuid) }
   }
 

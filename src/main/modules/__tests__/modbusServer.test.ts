@@ -2360,7 +2360,9 @@ describe('ModbusServer', () => {
       })
     })
 
-    it('tells every window the list on each change', () => {
+    it('tells every window the list on each change', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      clearWindowCalls()
       server.setFaults(uuid, [rule])
       const afterSet = server.getFaultStatus(uuid).version
       server.clearFaults(uuid)
@@ -2395,12 +2397,64 @@ describe('ModbusServer', () => {
 
       expect(server.replaceFaults(uuid, read, [rule])).toEqual({
         taken: false,
-        status: { version: server.getFaultStatus(uuid).version, rules: [] }
+        status: { version: server.getFaultStatus(uuid).version, rules: [], exists: false }
       })
       expect(server.allFaults()).toEqual({})
     })
 
-    it('takes a window’s write at the version it read, refuses it once MCP changed the list, and answers the list either way', () => {
+    // The version a window refreshes to after the delete is current, so the
+    // version alone would take the write: main has to know the server is gone.
+    it('refuses a window’s save after the delete and its refresh, and the server undo restores starts with no rules', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      server.setFaults(uuid, [rule])
+
+      await server.deleteServer(uuid)
+      const refreshed = server.getFaultStatus(uuid)
+      const save = server.replaceFaults(uuid, refreshed.version, [
+        { action: { kind: 'exception', code: 6 } }
+      ])
+
+      expect(refreshed).toEqual({ version: refreshed.version, rules: [], exists: false })
+      expect(save).toEqual({ taken: false, status: refreshed })
+      expect(server.allFaults()).toEqual({})
+
+      // Undo replays the server under the same uuid through create_server.
+      await server.createServer({ uuid, port: 5020 })
+      hostUnit()
+      const cb = vi.fn()
+      lastVector(ServerTCP).getHoldingRegister(100, unitIdNumber, cb)
+
+      expect(server.getFaultStatus(uuid)).toEqual({
+        version: refreshed.version,
+        rules: [],
+        exists: true
+      })
+      expect(cb).toHaveBeenCalledExactlyOnceWith(null, 1)
+    })
+
+    it('refuses an MCP set for a deleted server, and keeps no rules for it', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      await server.deleteServer(uuid)
+
+      expect(server.setFaults(uuid, [rule])).toBeUndefined()
+      expect(server.allFaults()).toEqual({})
+    })
+
+    it('takes rules from MCP and from a window for a server whose bind failed', async () => {
+      // 65535 busy walks to 65536, which is no port, so the bind fails.
+      portAvailableResults = [false]
+      expect(await server.createServer({ uuid, port: 65535 })).toBeUndefined()
+
+      expect(server.setFaults(uuid, [rule])).toEqual([rule])
+      const status = server.getFaultStatus(uuid)
+      expect(server.replaceFaults(uuid, status.version, [])).toEqual({
+        taken: true,
+        status: { version: server.getFaultStatus(uuid).version, rules: [], exists: true }
+      })
+    })
+
+    it('takes a window’s write at the version it read, refuses it once MCP changed the list, and answers the list either way', async () => {
+      await server.createServer({ uuid, port: 5020 })
       const read = server.getFaultStatus(uuid).version
       server.setFaults(uuid, [rule])
       const afterMcp = server.getFaultStatus(uuid)
@@ -2414,6 +2468,7 @@ describe('ModbusServer', () => {
     })
 
     it('keeps another server’s rules when one is deleted', async () => {
+      await server.createServer({ uuid: 'the-other-one', port: 5021 })
       server.setFaults('the-other-one', [rule])
 
       await server.deleteServer(uuid)
@@ -2435,7 +2490,7 @@ describe('ModbusServer', () => {
       })
     })
 
-    it('knows the main server, a server with a listener and the RTU server, and no other', async () => {
+    it('knows the main server and every server created and not deleted since, listening or not', async () => {
       expect(server.hasServer(MAIN_SERVER_UUID)).toBe(true)
       expect(server.hasServer(uuid)).toBe(false)
 
@@ -2443,10 +2498,18 @@ describe('ModbusServer', () => {
       expect(server.hasServer(uuid)).toBe(true)
 
       await server.stopAllTcpServers()
+      expect(server.hasServer(uuid)).toBe(true)
+
+      await server.deleteServer(uuid)
       expect(server.hasServer(uuid)).toBe(false)
 
       await server.startRtuServer({ uuid, serialConfig: rtuConfig })
       expect(server.hasServer(uuid)).toBe(true)
+    })
+
+    it('says a server it does not know is gone in the status', () => {
+      expect(server.getFaultStatus('not-a-server').exists).toBe(false)
+      expect(server.getFaultStatus(MAIN_SERVER_UUID).exists).toBe(true)
     })
   })
 

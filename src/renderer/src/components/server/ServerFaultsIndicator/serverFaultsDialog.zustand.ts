@@ -37,6 +37,8 @@ interface ServerFaultsDialogZustand {
   loading: boolean
   /** A write is out, and the list it leaves is not known yet. */
   writing: boolean
+  /** Main's last answer said it no longer has the server, which takes no rules. */
+  deleted: boolean
   /** When `status` arrived, which `expiresAt` is measured against. */
   fetchedAt: number
   /** Undefined while the list is shown. */
@@ -87,10 +89,16 @@ let latestWrite = 0
 /**
  * Whether a write would be built from a list main may no longer hold: while a
  * status request is out, the first one included, or while another write is.
- * `replaceWith` sends nothing then, and the buttons that write are disabled.
+ * Or whether main would refuse it for a server it no longer has. `replaceWith`
+ * sends nothing then, and the buttons that write are disabled.
  */
-export const writeBlocked = (z: { loading: boolean; writing: boolean }): boolean =>
-  z.loading || z.writing
+export const writeBlocked = (z: {
+  loading: boolean
+  writing: boolean
+  deleted: boolean
+}): boolean => z.loading || z.writing || z.deleted
+
+const DELETED = 'This server was deleted, so its fault rules cannot be changed.'
 
 /** The message a write main refused as stale leaves on screen. */
 const STALE_WRITE =
@@ -104,9 +112,22 @@ export const useServerFaultsDialogZustand = create<
     /** The list main holds as `status` last said it, which every write sends back whole. */
     const currentRules = () => get().status.map(ruleOfStatus)
 
-    /** Puts the list main answered on screen, with the version a write sends back. */
+    /**
+     * Puts the list main answered on screen, with the version a write sends back.
+     * An answer for a server main no longer has closes the form and drops its
+     * draft, because no save can take it.
+     */
     const showStatus = (answer: ServerFaultStatus) => {
+      if (!answer.exists) generation += 1
       set((state) => {
+        if (!answer.exists) {
+          state.editing = undefined
+          state.draft = emptyDraft
+          state.error = DELETED
+        } else if (state.deleted) {
+          state.error = undefined
+        }
+        state.deleted = !answer.exists
         state.status = answer.rules
         state.version = answer.version
         state.fetchedAt = Date.now()
@@ -181,6 +202,7 @@ export const useServerFaultsDialogZustand = create<
       version: 0,
       loading: false,
       writing: false,
+      deleted: false,
       fetchedAt: 0,
       editing: undefined,
       target: undefined,
