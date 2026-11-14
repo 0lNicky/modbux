@@ -35,6 +35,8 @@ import {
   disableClientRawMode,
   expectCell,
   expectCellContains,
+  openFaultRules,
+  closeFaultRules,
   splitOutServerWindow
 } from '../../fixtures/helpers'
 import { resolve } from 'path'
@@ -387,6 +389,33 @@ test.describe.serial('Act II — Building the Simulator', () => {
     await mainPage.keyboard.press('Escape')
     await beat(mainPage, 300)
   })
+
+  test('scene 14b — server fault rules dialog', async ({ mainPage }) => {
+    await openFaultRules(mainPage)
+    await mainPage.getByTestId('server-faults-add-btn').click()
+    await mainPage.getByTestId('fault-form-unit-id').fill('0')
+    await mainPage.getByTestId('fault-form-action-delay').click()
+    await mainPage.getByTestId('fault-form-ms').fill('250')
+    await mainPage.getByTestId('fault-form-save-btn').click()
+    await expect(mainPage.getByTestId('server-faults-rule-0')).toBeVisible()
+
+    await mainPage.getByTestId('server-faults-add-btn').click()
+    await mainPage.getByTestId('fault-form-unit-id').fill('0')
+    await mainPage.getByTestId('fault-form-address-start').fill('10')
+    await mainPage.getByTestId('fault-form-address-end').fill('20')
+    await mainPage.getByTestId('fault-form-action-exception').click()
+    await mainPage.getByTestId('fault-form-code').fill('2')
+    await mainPage.getByTestId('fault-form-save-btn').click()
+    await expect(mainPage.getByTestId('server-faults-rule-1')).toBeVisible()
+    await beat(mainPage, 300)
+
+    const dialog = mainPage.getByTestId('server-faults-dialog').locator('.MuiDialog-paper')
+    await dialog.screenshot({ path: resolve(SHOTS, 'server-fault-rules.png') })
+
+    await mainPage.getByTestId('server-faults-clear-all-btn').click()
+    await closeFaultRules(mainPage)
+    await beat(mainPage, 300)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -507,6 +536,24 @@ test.describe.serial('Act III — Going Live', () => {
     await expectCellContains(mainPage, 4, 'value', '50.01')
 
     await snap(mainPage, 'client-decoded-values')
+  })
+
+  test('scene 19a — linear interpolation modal', async ({ mainPage }) => {
+    await mainPage.getByTestId('interpolation-action-0').click()
+    await expect(mainPage.getByTestId('interpolation-x1-field')).toBeVisible()
+
+    await mainPage.getByTestId('interpolation-x1-field').locator('input').fill('0')
+    await mainPage.getByTestId('interpolation-x2-field').locator('input').fill('1000')
+    await mainPage.getByTestId('interpolation-y1-field').locator('input').fill('0')
+    await mainPage.getByTestId('interpolation-y2-field').locator('input').fill('100')
+    await beat(mainPage, 300)
+
+    const modal = paperOf(mainPage, 'interpolation-x1-field')
+    await modal.screenshot({ path: resolve(SHOTS, 'client-interpolation.png') })
+
+    await mainPage.getByTestId('interpolation-reset-btn').click()
+    await mainPage.keyboard.press('Escape')
+    await beat(mainPage, 300)
   })
 
   test('scene 19b — filtering a column, and clearing it', async ({ mainPage }) => {
@@ -923,6 +970,13 @@ test.describe.serial('Act V — Side by Side', () => {
 
     // The TCP button back on primary, ready for the split view scenes.
     await snap(mainPage, 'client-rtu-over-tcp-off')
+
+    // RTU connection configuration bar
+    await mainPage.getByTestId('protocol-rtu-btn').click()
+    await beat(mainPage, 400)
+    await snap(mainPage, 'client-rtu-config')
+    await mainPage.getByTestId('protocol-tcp-btn').click()
+    await beat(mainPage, 300)
   })
 
   test('scene 31 — split view', async ({ mainPage, electronApp }) => {
@@ -964,5 +1018,31 @@ test.describe.serial('Act V — Side by Side', () => {
     await beat(mainPage, 500)
 
     await expect(mainPage.getByTestId('home-btn')).toBeVisible()
+  })
+
+  test('scene 34 — MCP settings', async ({ mainPage }) => {
+    await navigateToHome(mainPage)
+    await mainPage.getByTestId('home-settings-btn').click()
+    await expect(mainPage.getByTestId('mcp-settings')).toBeVisible()
+    await expect(mainPage.getByTestId('mcp-stdio-command')).toBeVisible()
+    await beat(mainPage, 300)
+
+    await mainPage.evaluate(() => {
+      const stdioCmd = document.querySelector('[data-testid="mcp-stdio-command"]')
+      if (stdioCmd) {
+        stdioCmd.textContent =
+          'ELECTRON_RUN_AS_NODE=1 /Applications/Modbux.app/Contents/MacOS/Modbux /Applications/Modbux.app/Contents/Resources/app.asar/out/main/mcpStdio.js'
+      }
+      const stdioClaude = document.querySelector('[data-testid="mcp-stdio-claude-command"]')
+      if (stdioClaude) {
+        stdioClaude.textContent =
+          'claude mcp add modbux -e ELECTRON_RUN_AS_NODE=1 -- /Applications/Modbux.app/Contents/MacOS/Modbux /Applications/Modbux.app/Contents/Resources/app.asar/out/main/mcpStdio.js'
+      }
+    })
+    await beat(mainPage, 200)
+    await snap(mainPage, 'settings-mcp')
+
+    await mainPage.getByTestId('home-btn').click()
+    await beat(mainPage, 300)
   })
 })

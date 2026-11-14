@@ -1,10 +1,12 @@
 # Modbux
 
-> A fork of [ploxc/modbux](https://github.com/ploxc/modbux) by [ploxc](https://github.com/ploxc). It adds an MCP server, so an AI agent can drive the client and the server.
+[English](./README.en.md) | 正體中文
 
-## Let an AI agent install it
+> 本專案分支自 [ploxc](https://github.com/ploxc) 開發的 [ploxc/modbux](https://github.com/ploxc/modbux)，新增了 MCP 伺服器，讓 AI 代理程式可直接操控 Client 與 Server。
 
-Paste this into Claude Code, Codex, Antigravity or any agent that can run shell commands:
+## 交由 AI 代理程式安裝
+
+將以下內容貼入 Claude Code、Codex、Antigravity 或任何可執行 shell 指令的代理程式：
 
 ````text
 Install Modbux from its latest release at https://github.com/fengchyunbih/modbux/releases
@@ -37,7 +39,7 @@ Do not build from source.
    "Allow writes to devices".
 ````
 
-The details are in [docs/mcp.md](docs/mcp.md).
+詳細說明請見 [docs/mcp.md](docs/mcp.md) 與[使用手冊](docs/manual/README.md)。
 
 <img src="./resources/icon.png" alt="Logo" width="60" />
 
@@ -46,173 +48,160 @@ The details are in [docs/mcp.md](docs/mcp.md).
 [![License](https://img.shields.io/github/license/fengchyunbih/modbux?color=5b9279)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5b9279)
 
-## An Open Source Modbus Client & Server Simulation Tool for Windows, macOS and Linux
+## 適用於 Windows、macOS 與 Linux 的開源 Modbus Client 與 Server 模擬工具
 
-**Modbux is the tool I desperately needed four years ago.** It handles Modbus TCP, RTU and RTU over TCP, lets you assign datatypes to registers, scan for addresses and data, simulate servers for testing, and actually _understand_ what you're reading, all in one app.
+**Modbux 是我四年前迫切需要的工具。** 它在單一應用程式中支援 Modbus TCP、RTU 與 RTU over TCP，可為暫存器指定資料型別、掃描位址與資料、模擬測試用伺服器，並讓你真正看懂所讀到的數值。
 
-## Download
+## 下載
 
-**[Download the latest release](https://github.com/fengchyunbih/modbux/releases/latest)**
+**[下載最新版本](https://github.com/fengchyunbih/modbux/releases/latest)**
 
-Installers for Windows, and for macOS on both Apple silicon and Intel. Linux gets a `.deb`
-and an `.AppImage`, x64 and arm64.
+提供 Windows 安裝檔、macOS（Apple silicon 與 Intel）安裝映像檔，以及 Linux 的 `.deb` 與 `.AppImage`（x64 與 arm64）。
 
-**[Read the MCP documentation](docs/mcp.md)**, and the
-[upstream documentation](https://ploxc.com/modbux/docs/latest/getting-started) for the rest of the app.
+**[閱讀使用手冊](docs/manual/README.md)**、**[閱讀 MCP 說明文件](docs/mcp.md)**，以及其餘功能的[上游說明文件](https://ploxc.com/modbux/docs/latest/getting-started)。
 
-## Features
+## 功能特色
 
-**Client Mode:**
+**Client 模式：**
 
-- Read/write every common data type: int16/32/64, uint16/32/64, float, double, bitmap, timestamps and UTF-8 strings
-- Bitmap detail panel: expandable 16-bit view with per-bit toggles, color coding, invert, and inline comments
-- Advanced mode: see all numeric data type interpretations simultaneously
-- `Read configuration` mode: efficiently read only configured registers with automatic grouping, group index column, and inline error rows
-- Scan Unit IDs and register ranges, watching the grid fill as the scan walks
-- A unit that answers with an exception is told apart from one that says nothing: the first
-  is a device that is there and refusing, the second is nothing on the bus at all
-- Big-endian / Little-endian support (swap registers)
-- Scaling factors and linear interpolation
-- Modbus TCP (with hostname/IP) and RTU support with automatic COM port discovery
-- RTU over TCP for serial-to-Ethernet gateways that carry encapsulated RTU frames
-- Configuration save/load (JSON)
+- 讀寫所有常見資料型別：int16/32/64、uint16/32/64、float、double、bitmap、時間戳記（`UNIX` 與 IEC 870-5 `DATETIME`）與 UTF-8 字串
+- Bitmap 明細面板：可展開檢視 16 個位元，支援逐位元切換、燈號顏色設定、反相（Invert）與行內註解
+- Advanced mode（進階模式）：同時顯示所有數值資料型別的解碼結果
+- `Read configuration` 模式：僅讀取已設定的暫存器，自動合併分組、顯示群組索引欄位（`G`）與行內錯誤訊息
+- 掃描 Unit ID 與暫存器位址範圍，並在掃描進行時即時填入表格
+- 區分「回傳例外碼的 Unit」與「無回應的 Unit」：前者代表總線上有設備但拒絕該請求，後者代表總線上沒有該設備
+- 四種位元組與字組順序（`ABCD`、`CDAB`、`BADC`、`DCBA` — 支援交換暫存器順序與交換暫存器內位元組）
+- 縮放係數（Scaling factor）與線性內插（Linear interpolation）
+- 支援 Modbus TCP（主機名稱或 IP）與 RTU，並自動偵測 COM 序列埠
+- 支援 RTU over TCP，適用於傳送封裝 RTU 封包的序列轉乙太網路閘道器
+- 通訊紀錄（Transaction log，最多保留 1,000 筆原始十六進位封包、延遲時間，並支援匯出 CSV）
+- 復原與重做（Undo / Redo，最多 100 步）
+- 設定檔儲存與載入（JSON）
 
-**Server Mode:**
+**Server 模式：**
 
-- Modbus TCP and RTU server modes (serial port, USB converters, socat virtual pairs)
-- Simulate several Modbus devices at once (TCP mode)
-- The full Unit ID range the protocol allows, 0-255, on every server
-- The same data types as the client: numeric registers, bitmap, UTF-8 strings, Unix timestamps and IEC 870-5 datetime
-- Static or random value generation with configurable intervals
-- Time-based generators for Unix/datetime that output the current system time
-- DateTimePicker with UTC toggle for setting exact timestamps
-- Redesigned booleans: individual address rows with toggle circles, inline comments, and hover-to-delete
-- Configuration save/load (JSON)
-- Instant auto-start
+- 支援 Modbus TCP 與 RTU 伺服器模式（實體序列埠、USB 轉接器、socat 虛擬序列埠對）
+- 同時模擬最多 10 台 Modbus TCP 伺服器（各自使用不同連接埠）
+- 每台伺服器皆支援協定允許的完整 Unit ID 範圍（0–255）
+- 支援與 Client 相同的資料型別：數值暫存器、bitmap、UTF-8 字串、Unix 時間戳記與 IEC 870-5 datetime
+- 固定數值或可設定更新間隔的隨機數值產生器（Generator）
+- 輸出系統目前時間的 Unix / datetime 時間產生器
+- 附帶 UTC 切換開關的 DateTimePicker，可設定精確時間戳記
+- 重新設計的布林點位介面：逐位址列顯示切換圓鈕、行內註解與游標懸停刪除按鈕
+- 故障注入規則（Fault rules，每台伺服器最多 32 條規則：模擬回傳 Modbus 例外碼、`no_response` 或回應延遲 `delay`，支援 `everyNth` 與 `forSeconds` 條件）
+- 設定檔儲存與載入，以及完整專案檔儲存與載入（`Save project` / `Open project`，JSON）
+- 啟動即自動開始監聽
 
-**Split Mode:**
+**Split Mode（並排模式）：**
 
-- Run client and server simultaneously in separate windows
-- Server opens in a second window, main window becomes the client
-- Connect to your own server via `127.0.0.1` for local testing
-- Great for learning Modbus hands-on or developing both sides of a communication simultaneously
+- 在兩個獨立視窗中同時執行 Client 與 Server
+- Server 在第二個視窗開啟，主視窗則切換為 Client
+- 透過 `127.0.0.1` 連線至本機模擬伺服器進行測試
+- 適合實際演練 Modbus 或同時開發通訊兩端的程式
 
-**State Persistence:**
+**MCP 伺服器：**
 
-- Everything saves automatically between sessions
+- 內建 Model Context Protocol (MCP) 伺服器，監聽 `http://127.0.0.1:15502/mcp`（Streamable HTTP + Bearer token）並提供 `stdio` 轉接器（`out/main/mcpStdio.js`）
+- 提供 21 項工具、7 項資源與 4 組提示詞範本，讓 AI 代理程式操控 Client 與 Server
+- 具備寫入保護開關（Settings 中的 `Allow writes to devices` 開關）
 
-## How It Compares
+**狀態自動保存（State Persistence）：**
 
-There are plenty of Modbus tools around and several of them are good at what they do. The
-catch is that they each do one piece of it, and the good ones are paid and Windows-only:
-a client here, a server there, a scanner separately. I used those for years, switching
-between windows.
+- 所有畫面狀態與設定會在關閉與重啟之間自動保存
 
-Modbux is free and open source, runs on Windows, macOS and Linux, and puts the client and
-the server in one app, so you can point one at the other over `127.0.0.1` and test without
-any hardware in front of you. The part I actually built it for is the interpretation:
-every data type applied to the same registers at once, endianness you can flip, scaling,
-and a scan that tells you where the data is instead of only which unit answered.
+## 工具比較
 
-If you want it laid out tool by tool, there is a
-[comparison page](https://ploxc.com/modbux/alternatives) on the upstream site.
+市面上的 Modbus 工具不少，其中幾款在各自領域表現不俗。問題在於每套工具往往只做其中一件事，而且好用的多半是付費且僅支援 Windows：Client 一套、Server 一套、掃描器又是另一套。我過去好幾年都得在這些視窗之間來回切換。
 
-## UI
+Modbux 免費開源，支援 Windows、macOS 與 Linux，並將 Client 與 Server 整合在同一個應用程式裡，讓你直接連向 `127.0.0.1` 測試，手邊不需要任何硬體。我開發它最核心的理由是資料解讀能力：對同一批暫存器同時套用所有資料型別、隨時切換位元組順序、套用縮放換算，以及不僅找出哪個 Unit ID 有回應、更能直接找出資料位址落在哪裡的掃描器。
+
+若想逐一比較各款工具，請參閱上游網站的[工具比較頁面](https://ploxc.com/modbux/alternatives)。
+
+## 介面預覽
 
 ![Modbux Client UI](./resources/modbux-client.png)
 
-## Why This Exists
+## 為什麼會有這套工具
 
-Four years ago, I was thrown into a CHP plant commissioning with zero Modbus experience. The client didn't know the addresses. I didn't know the protocol. I had a scanner that found... something... and a hex reader that showed me values I couldn't interpret.
+四年前，我在完全沒有 Modbus 經驗的情況下被派去執行汽電共生廠（CHP）的試車。客戶不知道點位位址，我也不懂通訊協定。手邊只有一套掃描出「某些東西」的掃描器，以及一個顯示十六進位數值卻無法幫我解讀意義的讀取工具。
 
-_Is that temperature in register 100 or 101? Does the documentation start at 0 or 1? Why does TIA Portal call it 40000 when the manual says holding register 0? Is it big-endian or little-endian? Input registers or holding registers? Which function code do I even need?_
+_溫度到底在暫存器 100 還是 101？說明書是從 0 還是從 1 開始算？為什麼手冊寫 Holding Register 0，TIA Portal 卻叫它 40000？它是 big-endian 還是 little-endian？是 Input Registers 還是 Holding Registers？我到底該用哪個 Function Code？_
 
-Oh, and it was Modbus RTU, so add "are my termination resistors right?" and "is my wiring actually correct?" to the list. Because if those aren't perfect, you're reading absolutely nothing and troubleshooting blind.
+而且現場還是 Modbus RTU，所以清單上還得加上「終端電阻裝對了嗎？」與「接線真的沒接反嗎？」。因為只要其中一項不對，就完全讀不到任何東西，只能盲目除錯。
 
-**This went on for four years.**
+**這種情況持續了四年。**
 
-Gradually, I figured it out. But I watched colleague after colleague hit the same walls. We'd eventually succeed, sure, with blood, sweat, and way too many site visits. The tools we had could read a float or an int if you were lucky, but they never gave you the full picture. Endianness? Swap the registers yourself and hope. Documentation starting at the wrong offset? Good luck finding where the data actually lives.
+後來我逐漸摸透了，但卻看著同事們一個接一個撞上同樣的牆。我們最後當然還是能完成任務，但代價是無數心血與太多趟現場出差。手邊的工具運氣好時能讀出一個 float 或 int，卻從來無法呈現全貌。位元組順序不對？自己交換暫存器碰運氣吧。說明書位址偏移寫錯？祝你好運找到資料真正存放的位置。
 
-Modbus TCP helped, at least the physical layer wasn't fighting you anymore. I built a TypeScript implementation for my home solar panels using [modbus-serial](https://www.npmjs.com/package/modbus-serial) (thanks [yaacov](https://github.com/yaacov)!), and things started clicking. The protocol itself actually made sense once you understood it.
+到了 Modbus TCP，至少實體層不再處處與你作對。我用 [modbus-serial](https://www.npmjs.com/package/modbus-serial)（感謝 [yaacov](https://github.com/yaacov)！）為自家的太陽能板寫了一套 TypeScript 程式，事情才開始豁然開朗。一旦理解之後，這套通訊協定本身其實非常直觀。
 
-Then came another commissioning. More problems. More frustration. And I snapped.
+接著又是一場試車。更多問題、更多挫折。我終於受不了了。
 
-**"I've had enough of this."**
+**「我受夠了。」**
 
-I dove into the protocol properly, really _understood_ it, and realized: I already have the pieces. I know how this works now. I can build the tool I've been wishing existed this entire time.
+我決定徹底鑽研這套協定，把每個細節弄懂，然後發現：我手邊已經有所有需要的拼圖了。我知道它怎麼運作，我可以親手做出這幾年來一直希望存在的工具。
 
-So I did.
+於是我動手做了。
 
-I built something that shows you every possible data interpretation at once. That scans not just for devices, but for _where the actual data is_ (because I once spent hours discovering third-party documentation had the wrong register range). That lets you test PLC implementations against simulated devices _before_ you're on-site hoping everything works.
+我做出了一套能同時顯示所有可能資料型別解讀結果的工具；一套不只掃描設備、更能直接掃描出「實際資料位址在哪裡」的工具（因為我曾花了好幾個小時才發現第三方說明書寫錯了暫存器範圍）；一套能讓你去現場之前，先在辦公室用模擬設備驗證 PLC 程式的工具。
 
-I use it every single day now. The idea of writing Modbus code and just _hoping_ it works when I connect to the real device? That's not how I work anymore.
+我現在每天都在用它。寫好 Modbus 程式卻只能「祈禱」去到現場連上設備會動？我再也不用那種方式工作了。
 
-**If you've ever fought with Modbus, you'll understand why this needed to exist.**
+**如果你曾經與 Modbus 苦戰過，你就會明白為什麼需要這套工具。**
 
-Built with Electron, React, and Material-UI. Open source because this industry needs better tools.
+以 Electron、React 與 Material-UI 打造。之所以開源，是因為這個產業需要更好的工具。
 
-### Free, and Staying Free
+### 免費，且維持免費
 
-No account, no trial, no paid tier.
+無須註冊帳號、無試用期限制、無付費版本。
 
-## Why "Modbux"?
+## 為什麼叫「Modbux」？
 
-It's a typo I always made, _modbux_ instead of _modbus_. But it fits: it's your user experience (UX) working with Modbus. The typo became the brand.
+這是我自己常打錯的字——把 _modbus_ 打成 _modbux_。但這個名字剛好契合：它代表你在操作 Modbus 時的使用者體驗（UX）。這個打字錯誤就成了品牌名稱。
 
-## Pro Tip: Let AI Do the Boring Stuff
+## 實用技巧：讓 AI 處理繁瑣設定
 
-Saved configs are JSON. Show Claude or ChatGPT a few example registers, paste your device documentation, ask it to complete the mapping. Load it back into Modbux, done. Welcome to 2026.
+儲存的設定檔皆為 JSON 格式。給 Claude 或 ChatGPT 看幾個暫存器範例、貼上設備說明書的點位表，請它補齊完整對應表，再載入回 Modbux 即可完成。歡迎來到 2026 年。
 
-## Installation
+## 安裝說明
 
 ### Windows
 
-Download the `.exe` file from [releases](https://github.com/fengchyunbih/modbux/releases).
+從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.exe` 安裝檔。
 
-⚠️ **SmartScreen warning**: Click "More info" → "Run anyway"
+⚠️ **SmartScreen 警告**：點擊「其他資訊」（More info）→「仍要執行」（Run anyway）
 
 ### macOS
 
-Download the `.dmg` file from [releases](https://github.com/fengchyunbih/modbux/releases). Pick `arm64` for Apple silicon and `x64` for Intel.
+從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.dmg` 檔案。Apple silicon 請選擇 `arm64`，Intel 請選擇 `x64`。
 
-**macOS 12 or newer.** Modbux 2.3 moved to Electron 43, which does not run on Catalina or
-Big Sur. Modbux 2.2.1 still does, and stays on the [upstream releases page](https://github.com/ploxc/modbux/releases).
+**需 macOS 12 以上版本。** Modbux 2.3 升級至 Electron 41，不再支援 Catalina 或 Big Sur。Modbux 2.2.1 仍支援舊版系統，並保留於[上游 releases 頁面](https://github.com/ploxc/modbux/releases)。
 
-⚠️ **First time opening**: Right-click the app and select "Open"
-(or go to System Preferences → Security & Privacy → "Open Anyway")
+⚠️ **首次開啟**：對應用程式按右鍵並選擇「打開」（Open），或至「系統設定 → 隱私權與安全性 → 強制打開」（Open Anyway）。
 
 ### Linux
 
-Download the `.deb` or the `.AppImage` from [releases](https://github.com/fengchyunbih/modbux/releases), x64 or arm64. Building from source
-works too, see [Build It Yourself](#build-it-yourself).
+從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.deb` 或 `.AppImage`（支援 x64 與 arm64）。亦可從原始碼建置，請參閱[自行建置](#自行建置)。
 
-Two things on Linux need a permission the app cannot give itself, and Modbux asks about
-both rather than failing quietly:
+在 Linux 上有兩項功能需要應用程式無法自行取得的系統權限，Modbux 會主動彈出提示詢問，而非無聲失敗：
 
-- **Port 502** is reserved for root, so the server would start somewhere else. Opening the
-  server view offers to lower the floor, until reboot or for good.
-- **Serial ports** belong to a group, usually `dialout`, and a user outside it cannot open
-  one. The port is still listed, so nothing looks wrong until the connection is refused.
-  Selecting RTU offers to add you, and offers to log you out afterwards, since a session
-  keeps the groups it was given at login.
+- **連接埠 502** 預設保留給 root 使用，因此伺服器會改在其他連接埠啟動。開啟 Server 畫面時會詢問是否下調特權連接埠門檻（可選擇生效至下次重開機或永久生效）。
+- **序列埠**屬於特定系統群組（通常為 `dialout`），不在群組內的使用者無法開啟序列埠。由於序列埠仍會出現在清單中，在連線被拒前表面上看不到異狀。切換至 RTU 時會詢問是否將你的帳號加入群組，並在完成後提供登出選項（因為登入工作階段會維持登入當下的群組權限）。
 
-Both show the exact command before running it, and ask for your password through PolicyKit,
-so Modbux never sees it. Inside Flatpak or Snap it hands you the command instead. The
-commands are under [Build It Yourself](#build-it-yourself) if you would rather run them
-yourself.
+兩項功能在執行前都會顯示完整指令，並透過 PolicyKit 詢問密碼，Modbux 本身不會接觸你的密碼。若在 Flatpak 或 Snap 沙盒中執行，則會改為顯示指令供你自行貼上執行。若想手動執行，指令亦列於下方[自行建置](#自行建置)章節。
 
-## Build It Yourself
+## 自行建置
 
-Modbux is an Electron application built with React, TypeScript, and Material-UI.
+Modbux 是使用 React、TypeScript 與 Material-UI 建構的 Electron 應用程式。
 
-### Prerequisites
+### 環境需求
 
-- Node.js (LTS version recommended)
-- Yarn package manager
+- Node.js（建議使用 LTS 版本）
+- Yarn 套件管理工具
 
-### Setup
+### 安裝步驟
 
-**Clone and install dependencies:**
+**複製儲存庫並安裝相依套件：**
 
 ```bash
 git clone https://github.com/fengchyunbih/modbux.git
@@ -220,35 +209,35 @@ cd modbux
 yarn
 ```
 
-### Development
+### 開發模式
 
-**Run the app in development mode:**
+**以開發模式啟動應用程式：**
 
 ```bash
 yarn dev
 ```
 
-### Testing
+### 測試
 
-**Run unit tests:**
+**執行單元測試：**
 
 ```bash
 yarn test
 ```
 
-**Run unit tests in watch mode:**
+**以監看模式執行單元測試：**
 
 ```bash
 yarn test:watch
 ```
 
-**Run E2E tests:**
+**執行 E2E 測試：**
 
 ```bash
 yarn test:e2e
 ```
 
-**Run everything this platform can:**
+**執行當前平台支援的所有測試：**
 
 ```bash
 yarn test:all:mac
@@ -256,93 +245,74 @@ yarn test:all:windows
 yarn test:all:linux
 ```
 
-Lint, typecheck, unit tests, both e2e modes, the screenshots and the scan
-measurement, plus what only that platform has: the hardware specs on macOS and
-Linux, and the port 502 modal on Linux, which is the one step that waits for a
-person. `yarn verify` is the shorter one to run before pushing: lint, typecheck,
-unit tests and e2e.
+包含 lint、型別檢查、單元測試、兩種 E2E 模式、畫面截圖與掃描效能測試，以及該平台專屬測試：macOS 與 Linux 的硬體測試，以及 Linux 的連接埠 502 對話框測試（唯一需要人工互動的步驟）。推送程式碼前可執行較快速的 `yarn verify`：包含 lint、型別檢查、單元測試與 E2E 測試。
 
-**Run E2E tests against a packaged build:**
+**針對打包後的建置執行 E2E 測試：**
 
 ```bash
 yarn test:e2e:packaged
 ```
 
-This builds, packages with `electron-builder --dir`, and runs the same specs
-against the binary in `dist/` instead of the `out/` bundle. It is the only way
-to catch problems that exist solely in the packaged app — most importantly a
-runtime dependency that sits in `devDependencies`, since only `dependencies` are
-packed into `app.asar` while a normal run resolves everything from the repo's
-`node_modules`.
+此指令會先建置並以 `electron-builder --dir` 打包，再針對 `dist/` 中的執行檔（而非 `out/` 開發輸出）執行同一套測試規格。這是唯一能捕捉「僅在打包後才出現的問題」的方式——尤其是誤放進 `devDependencies` 的執行期相依套件，因為只有 `dependencies` 會被打包進 `app.asar`，而一般開發模式會直接從儲存庫的 `node_modules` 解析所有套件。
 
-Packaged runs use a throwaway user-data directory, so they never touch the
-config of an installed Modbux.
+打包測試會使用獨立的暫存 user-data 目錄，不會影響系統中已安裝的 Modbux 設定。
 
-On macOS and Linux the socat specs run as well; on Windows they are skipped,
-because socat is unavailable there.
+在 macOS 與 Linux 上會一併執行 socat 虛擬序列埠測試；Windows 因無 socat 而會自動略過。
 
-**Run the hardware E2E tests:**
+**執行硬體 E2E 測試：**
 
 ```bash
 yarn test:e2e:hardware
 ```
 
-These are left out of the normal runs. They talk to an Arduino running
-`tools/arduino/iem3000.ino` over a serial port, and they find the board by its
-USB vendor ID rather than asking, so the run is unattended and skips itself when
-no board is attached.
+此測試不包含在一般測試流程中。它會透過序列埠與燒錄了 `tools/arduino/iem3000.ino` 的 Arduino 通訊，並自動依 USB Vendor ID 尋找開發板，無須人工指定；若未連接開發板則會自動略過。
 
-### Build
+### 建置安裝包
 
-**Create a distributable package for your platform:**
+**建立當前平台的可發佈安裝包：**
 
 ```bash
-# For Windows
+# Windows
 yarn build:win
 
-# For macOS
+# macOS
 yarn build:mac
 
-# For Linux
+# Linux
 yarn build:linux
 ```
 
-> **Linux notes:**
+> **Linux 注意事項：**
 >
-> The default Modbus port (502) requires elevated access. Modbux notices this on startup and
-> offers to fix it for you — it shows the exact command and asks for your password through
-> PolicyKit. To do it by hand instead:
+> 預設的 Modbus 連接埠（502）需要較高權限。Modbux 啟動時會自動偵測並提供修正選項——顯示完整指令並透過 PolicyKit 詢問密碼。若要手動設定：
 >
 > ```bash
 > sudo sysctl net.ipv4.ip_unprivileged_port_start=502
 > ```
 >
-> To persist across reboots:
+> 若要在重開機後持續生效：
 >
 > ```bash
 > echo 'net.ipv4.ip_unprivileged_port_start=502' | sudo tee /etc/sysctl.d/50-unprivileged-ports.conf
 > sudo sysctl --system
 > ```
 >
-> Serial ports belong to a group, usually `dialout`. Modbux offers this one too, when you
-> select RTU, and reads the group off the device rather than assuming the name. By hand:
+> 序列埠屬於特定系統群組（通常為 `dialout`）。切換至 RTU 時 Modbux 也會自動從裝置讀取實際群組名稱並提供加入群組的選項。若要手動設定：
 >
 > ```bash
 > sudo usermod -aG dialout $USER
 > ```
 >
-> Log out and back in for it to take effect: a session keeps the groups it was given at
-> login, so the file changes immediately and the session does not.
+> 設定完成後請登出再重新登入才會生效：登入工作階段會沿用登入時取得的群組清單，因此系統檔案雖已更新，但當前工作階段不會立即變更。
 
-## Contributing
+## 參與貢獻
 
-This fork has issues disabled. Open a pull request into `icp` on [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux). See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules. A bug in the upstream app goes to [ploxc/modbux](https://github.com/ploxc/modbux/issues).
+本分支儲存庫已關閉 Issues 功能。請針對 [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux) 的 `develop` 分支發起 Pull Request，規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。若為上游應用程式本身的錯誤，請回報至 [ploxc/modbux](https://github.com/ploxc/modbux/issues)。
 
-## License
+## 授權條款
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+本專案採用 MIT 授權條款，詳情請參閱 [LICENSE](LICENSE) 檔案。
 
-## Third-Party Software
+## 第三方軟體
 
-This software uses open-source packages with permissive licenses (MIT, ISC, Apache-2.0, BSD).
-All third-party licenses are included in the distributed application.
+本軟體使用具備寬鬆授權條款（MIT、ISC、Apache-2.0、BSD）的開源套件。所有第三方授權條款皆隨附於發佈的應用程式中。
