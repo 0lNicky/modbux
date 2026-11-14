@@ -1,7 +1,7 @@
 /**
  * Fault injection, closed loop: a fault rule set over MCP on the main server,
  * the window's client reading that server, and both logs agreeing on the
- * request the rule decided. Then the indicator and its clear button, in the
+ * request the rule decided. Then the indicator and the dialog's clear all, in the
  * main window and in the split out server window.
  *
  * `server-integration.json` holds registers at unit id 0 of the server on port
@@ -14,12 +14,14 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { resolve } from 'path'
 import {
   cleanServerState,
+  closeFaultRules,
   connectClient,
   disconnectClient,
   loadServerConfig,
   navigateToClient,
   navigateToHome,
   navigateToServer,
+  openFaultRules,
   selectUnitId,
   splitOutServerWindow
 } from '../../fixtures/helpers'
@@ -100,7 +102,7 @@ test.describe.serial('MCP fault injection', () => {
     await expect(mainPage.getByTestId('section-holding_registers')).toContainText('(12)')
     await mainPage.getByTestId('select-server-502').click()
     await selectUnitId(mainPage, '0')
-    await expect(mainPage.getByTestId('server-faults-indicator')).toHaveCount(0)
+    await expect(mainPage.getByTestId('server-faults-indicator')).toHaveText('Fault rules')
   })
 
   test('connect the window client to the server, and it reads', async ({ mainPage }) => {
@@ -174,13 +176,15 @@ test.describe.serial('MCP fault injection', () => {
     await navigateToServer(mainPage)
 
     await expect(mainPage.getByTestId('server-faults-indicator')).toHaveText('1 fault rule')
-    await expect(mainPage.getByTestId('server-faults-clear-btn')).toBeVisible()
   })
 
-  test('the clear button removes the rules, and reads come back', async ({ mainPage }) => {
-    await mainPage.getByTestId('server-faults-clear-btn').click()
+  test('clear all in the dialog removes the rules, and reads come back', async ({ mainPage }) => {
+    await openFaultRules(mainPage)
+    await mainPage.getByTestId('server-faults-clear-all-btn').click()
+    await expect(mainPage.getByTestId('server-faults-empty')).toBeVisible()
+    await closeFaultRules(mainPage)
 
-    await expect(mainPage.getByTestId('server-faults-indicator')).toHaveCount(0)
+    await expect(mainPage.getByTestId('server-faults-indicator')).toHaveText('Fault rules')
     expect((await call('server_get_faults')).json.rules).toEqual([])
     expect((await call('client_read_points')).isError).toBe(false)
   })
@@ -191,7 +195,7 @@ test.describe.serial('MCP fault injection', () => {
 
     await loadServerConfig(mainPage, SERVER_CONFIG)
 
-    await expect(mainPage.getByTestId('server-faults-indicator')).toHaveCount(0)
+    await expect(mainPage.getByTestId('server-faults-indicator')).toHaveText('Fault rules')
     expect((await call('server_get_faults')).json.rules).toEqual([])
   })
 
@@ -209,8 +213,10 @@ test.describe.serial('MCP fault injection', () => {
     await serverPage.reload()
     await expect(serverPage.getByTestId('server-faults-indicator')).toHaveText('1 fault rule')
 
-    await serverPage.getByTestId('server-faults-clear-btn').click()
-    await expect(serverPage.getByTestId('server-faults-indicator')).toHaveCount(0)
+    await openFaultRules(serverPage)
+    await serverPage.getByTestId('server-faults-clear-all-btn').click()
+    await closeFaultRules(serverPage)
+    await expect(serverPage.getByTestId('server-faults-indicator')).toHaveText('Fault rules')
     expect((await call('server_get_faults')).json.rules).toEqual([])
 
     await evaluateMain(() =>

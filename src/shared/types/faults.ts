@@ -1,6 +1,7 @@
 import z from 'zod'
 import { RegisterAddressSchema, UnitIdSchema } from './ranges'
 import { RegisterTypeSchema } from './register'
+import { ServerUuidSchema } from './server'
 
 /**
  * The longest a `delay` rule holds a reply back: six times the Modbux client's
@@ -46,6 +47,16 @@ export const ServerFaultRuleSchema = z.object({
   forSeconds: z.number().positive().max(FAULT_FOR_SECONDS_MAX).optional()
 })
 export type ServerFaultRule = z.infer<typeof ServerFaultRuleSchema>
+
+/** How many rules one server takes. A list is read in order, so a long one is a mistake. */
+export const MAX_FAULT_RULES = 32
+
+/** `set_server_faults`: the whole list one server holds from now on. */
+export const SetServerFaultsParamsSchema = z.object({
+  uuid: ServerUuidSchema,
+  rules: z.array(ServerFaultRuleSchema).max(MAX_FAULT_RULES)
+})
+export type SetServerFaultsParams = z.infer<typeof SetServerFaultsParamsSchema>
 
 /** A rule as `server_get_faults` answers it, with what it has done so far. */
 export type ServerFaultRuleStatus = ServerFaultRule & {

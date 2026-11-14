@@ -885,6 +885,18 @@ export async function splitOutServerWindow(app: ElectronApplication, p: Page): P
   return serverPage
 }
 
+/** Open the fault rules dialog of the shown server, from the Server view's indicator. */
+export async function openFaultRules(p: Page): Promise<void> {
+  await p.getByTestId('server-faults-indicator').click()
+  await expect(p.getByTestId('server-faults-dialog')).toBeVisible()
+}
+
+/** Close the fault rules dialog with its Close button. */
+export async function closeFaultRules(p: Page): Promise<void> {
+  await p.getByTestId('server-faults-close-btn').click()
+  await expect(p.getByTestId('server-faults-dialog')).toBeHidden()
+}
+
 /**
  * Close the add register dialog with Escape, pressed inside it.
  *

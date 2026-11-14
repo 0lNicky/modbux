@@ -1,9 +1,11 @@
 import z from 'zod'
-import { FAULT_DELAY_MAX_MS, MAIN_SERVER_UUID, ServerFaultRuleSchema } from '@shared'
+import {
+  FAULT_DELAY_MAX_MS,
+  MAIN_SERVER_UUID,
+  MAX_FAULT_RULES,
+  ServerFaultRuleSchema
+} from '@shared'
 import { defineTool, McpTool, McpToolContext, toolError, toolResult } from '../registry'
-
-/** How many rules one server takes. A list is read in order, so a long one is a mistake. */
-export const MAX_FAULT_RULES = 32
 
 const UUID_ARGUMENT = z
   .string()
@@ -63,7 +65,7 @@ const serverClearFaults = defineTool({
   name: 'server_clear_faults',
   title: 'Clear the fault rules of a server',
   description:
-    'Remove every fault rule of a Modbux server, so it answers masters normally again. The user can do the same with the clear button the server view shows while rules are set.',
+    'Remove every fault rule of a Modbux server, so it answers masters normally again. The user can do the same with Clear all in the Fault rules dialog of the server view.',
   inputSchema: { uuid: UUID_ARGUMENT },
   annotations: {
     readOnlyHint: false,

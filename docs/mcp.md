@@ -113,4 +113,5 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 - 已排程的延遲回應：清除或取代規則不會取消，照原定時間送出；停止或刪除該 Server（包括切換 TCP／RTU、改 port）會取消，不再送出。
 - `forSeconds` 秒後規則自動移除。
 - 規則只存在 main 的記憶體：重開 app、刪除 Server、對該 Server 載入設定檔或 project 檔時清空。
-- Server 有規則時，Server 畫面（main window 與拆出來的 Server 視窗都是）顯示規則條數與 **Clear faults** 按鈕。
+- 規則也能在 Server 畫面上編輯（main window 與拆出來的 Server 視窗都是）：**Fault rules** 按鈕開對話框，每條規則一行，可上移、下移、編輯、刪除，底部有新增、重新整理與全部清除。按鈕在有規則時顯示條數。
+- 畫面上的每次修改都是整份取代，與 `server_set_faults` 相同，所以每條規則的 `matched`、`triggered` 歸零，每個 `forSeconds` 的計時重新開始。對話框的次數只在開啟、規則變動與按下重新整理時讀取。

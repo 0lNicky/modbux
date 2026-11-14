@@ -27,6 +27,7 @@ import {
   AddRegisterParamsSchema,
   ConnectionConfigSchema,
   CreateServerParamsSchema,
+  MAX_FAULT_RULES,
   MAX_WRITE_BITS,
   PortSchema,
   PrivilegedPortFixModeSchema,
@@ -571,7 +572,8 @@ describe('each guarded channel got its own schema', () => {
     set_server_endianness: { uuid: 'server-1', littleEndian: true, byteSwap: true },
     delete_server: 'server-1',
     reset_server: 'server-1',
-    clear_server_faults: 'server-1'
+    clear_server_faults: 'server-1',
+    set_server_faults: { uuid: 'server-1', rules: [{ unitId: 1, action: { kind: 'no_response' } }] }
   }
 
   const start = (): { sent: SentMessage[] } => {
@@ -622,14 +624,16 @@ describe('each guarded channel got its own schema', () => {
   // Written by hand, because what a channel answers for a payload it took is
   // its own decision and not something the handler list tells apart. The
   // refusal half of the same rule is read from the handlers below.
-  it.each(['update_connection_config', 'update_register_config', 'set_register_mapping'])(
-    '%s answers true for a payload it took',
-    async (channel) => {
-      start()
+  it.each([
+    'update_connection_config',
+    'update_register_config',
+    'set_register_mapping',
+    'set_server_faults'
+  ])('%s answers true for a payload it took', async (channel) => {
+    start()
 
-      expect(await invoke(channel, validPayloads[channel])).toBe(true)
-    }
-  )
+    expect(await invoke(channel, validPayloads[channel])).toBe(true)
+  })
 
   it.each(Object.keys(validPayloads))('lets a valid %s payload through', async (channel) => {
     const { sent } = start()
@@ -675,5 +679,82 @@ describe('the read channel', () => {
 
     expect(await invoke('read')).toBeUndefined()
     expect(read).toHaveBeenCalledOnce()
+  })
+})
+
+// A window edits fault rules through these two, and the MCP tools reach the
+// same `ModbusServer` methods.
+describe('the fault rule channels', () => {
+  const RULE = { unitId: 4, action: { kind: 'exception', code: 6 } } as const
+
+  const startWith = (): {
+    setFaults: ReturnType<typeof vi.fn>
+    getFaults: ReturnType<typeof vi.fn>
+    sent: SentMessage[]
+  } => {
+    handle.mockClear()
+    const { windows, sent } = createWindows()
+    const setFaults = vi.fn().mockReturnValue([RULE])
+    const getFaults = vi.fn().mockReturnValue([{ ...RULE, matched: 2, triggered: 1 }])
+    initIpc(
+      {} as Electron.App,
+      {} as never,
+      {} as never,
+      { setFaults, getFaults } as never,
+      windows,
+      {} as never
+    )
+    return { setFaults, getFaults, sent }
+  }
+
+  it('set_server_faults hands the server the uuid and the whole list, and answers true', async () => {
+    const { setFaults } = startWith()
+
+    const answer = await invoke('set_server_faults', { uuid: 'server-1', rules: [RULE, RULE] })
+
+    expect(setFaults).toHaveBeenCalledWith('server-1', [RULE, RULE])
+    expect(answer).toBe(true)
+  })
+
+  it('set_server_faults takes an empty list, which clears', async () => {
+    const { setFaults } = startWith()
+
+    await invoke('set_server_faults', { uuid: 'server-1', rules: [] })
+
+    expect(setFaults).toHaveBeenCalledWith('server-1', [])
+  })
+
+  it.each([
+    [
+      'a rule the schema refuses',
+      { uuid: 'server-1', rules: [{ action: { kind: 'exception', code: 0 } }] }
+    ],
+    [
+      'a delay past its ceiling',
+      { uuid: 'server-1', rules: [{ action: { kind: 'delay', ms: 30_001 } }] }
+    ],
+    [
+      'more rules than a server takes',
+      { uuid: 'server-1', rules: Array.from({ length: MAX_FAULT_RULES + 1 }, () => RULE) }
+    ],
+    ['no uuid', { rules: [RULE] }]
+  ])('set_server_faults changes nothing for %s', async (_name, payload) => {
+    const { setFaults, sent } = startWith()
+
+    await invoke('set_server_faults', payload)
+
+    expect(setFaults).not.toHaveBeenCalled()
+    expect(sent.map(({ message }) => String(message.error).split(':')[0])).toEqual([
+      'set_server_faults'
+    ])
+  })
+
+  it('get_server_fault_status answers what the server counted for that uuid', async () => {
+    const { getFaults } = startWith()
+
+    const answer = await invoke('get_server_fault_status', 'server-1')
+
+    expect(getFaults).toHaveBeenCalledWith('server-1')
+    expect(answer).toEqual([{ ...RULE, matched: 2, triggered: 1 }])
   })
 })

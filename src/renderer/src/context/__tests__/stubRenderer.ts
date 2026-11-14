@@ -4,7 +4,8 @@ import {
   defaultClientState,
   ConnectionConfigSchema,
   RegisterConfigSchema,
-  RegisterMappingSchema
+  RegisterMappingSchema,
+  SetServerFaultsParamsSchema
 } from '@shared'
 
 /**
@@ -36,6 +37,7 @@ const answers: Record<string, (payload: unknown) => Promise<unknown>> = {
   updateConnectionConfig: answerConfig(ConnectionConfigSchema.deepPartial()),
   updateRegisterConfig: answerConfig(RegisterConfigSchema.deepPartial()),
   setRegisterMapping: answerConfig(RegisterMappingSchema),
+  setServerFaults: answerConfig(SetServerFaultsParamsSchema),
   // The words main answers with, which for a payload it refuses is nothing at
   // all rather than an empty list.
   addReplaceServerRegister: (payload: unknown): Promise<number[] | undefined> =>
@@ -44,6 +46,7 @@ const answers: Record<string, (payload: unknown) => Promise<unknown>> = {
   getAppVersion: () => Promise.resolve('0.0.0-test'),
   getRtuServerStatus: () => Promise.resolve(false),
   getServerFaults: () => Promise.resolve({}),
+  getServerFaultStatus: () => Promise.resolve([]),
   listSerialPorts: () => Promise.resolve([])
 }
 
