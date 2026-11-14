@@ -59,3 +59,11 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 
 - `client_scan_registers`：`startAddress`（PDU 位址）、`count`（1 到 10000）、`registerType`（省略時用 Client 目前的類型）、`chunkSize`（預設 100）、`timeoutMs`（100 到 5000，預設 500）。回傳非零的 word（或為 1 的 bit）。
 - `client_scan_unit_ids`：`startUnitId`、`endUnitId`、`registerTypes`（預設 `holding_registers`）、`address`（預設 0）、`length`（預設 1）、`timeoutMs`。unit id 數量乘以 register type 數量最多 1000。回傳有回應的 unit，回 Modbus exception 也算有回應。
+
+## Client 除錯 tools
+
+- `client_get_transactions`：`readOnlyHint`。回傳 Client 最近 1000 筆 transaction（與視窗的 Transactions 格子相同），由舊到新。參數：`limit`（預設 50，取最新的幾筆）、`sinceTimestamp`（epoch 毫秒，含）、`failedOnly`（只留 timeout、有錯誤訊息或 exception 的）。每筆有 unit id、位址、function code、request 與 response 的 hex、`durationMs`（送出到記錄的毫秒數，timeout 則是等待的時間）、`timeout`、`errorMessage`，以及設備回 Modbus exception 時的 `exceptionCode`。
+- `client_read_points`（每個 group 都失敗時）與 `client_write`（設備回錯誤時）的失敗結果多一個 `failedTransactions`：這次呼叫期間記下的失敗 transaction，格式同上。`client_write` 的寫入後回讀也算這次呼叫。成功、只有部分 group 失敗、被拒絕（未連線、忙碌）的結果沒有這個欄位。
+- 掃描 tools 不附 `failedTransactions`：每個無回應的 unit 都是一筆 timeout，只是雜訊。要看就呼叫 `client_get_transactions`。
+
+紀錄的 frame 在 TCP 與 RTU 下都是 unit id、function code、資料、CRC，不含 MBAP header。
