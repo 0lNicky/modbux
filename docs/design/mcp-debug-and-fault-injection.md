@@ -12,7 +12,7 @@
 
 - Frame 層的故障：CRC 錯誤、截斷的 frame、transaction id 不符。這些要包住 socket 或 serial port。
 - 故障規則存進設定檔。
-- 在畫面上編輯故障規則。這是步驟 D，另外設計。
+- 故障規則的一鍵預設情境。
 - 在畫面上顯示 Server 請求紀錄。
 
 ## 現況
@@ -52,7 +52,7 @@
 | A | Client 的 transaction 紀錄開給 MCP | 無 |
 | B | Server 請求紀錄 | 無 |
 | C | 故障注入，設定只從 MCP 進來，畫面顯示與清除 | B |
-| D | 在畫面上編輯故障規則 | C，另外設計 |
+| D | 在畫面上編輯故障規則 | C |
 
 ### A. Client 除錯
 
@@ -126,7 +126,35 @@
 
 ### D. 在畫面上編輯故障規則
 
-C 完成後另外設計。C 的畫面只做顯示與清除，但規則的事件與 channel 要讓 D 能直接沿用。
+**目的。** 沒有網路、用不了 AI 時的備援。功能要和 MCP 的一樣齊，畫面從簡。
+
+**寫入的做法。**
+
+- **整份取代（採用）。** 畫面把整份清單送給 main，走 MCP 已經在用的 `ModbusServer.setFaults`。`ServerFaults.set` 會把每條規則的次數歸零，並重新開始每個 `forSeconds` 的計時，所以改任何一條，其他規則的計數與倒數都重來。備援用途下這個代價可以接受，對話框裡要寫明。
+- **逐條操作。** 其他規則不受影響，但規則要有 id，MCP 的資料形狀得跟著改。
+- **整份取代，main 保留沒變動的規則的狀態。** `server_set_faults` 的行為會跟著變。
+
+**畫面。**
+
+- `ServerFaultsIndicator` 改成一顆永遠都在的按鈕，有規則時顯示條數並用 warning 色。按下去開對話框。原本的清除按鈕移進對話框。
+- 對話框每條規則一行：條件與動作的摘要、觸發次數與符合次數、`forSeconds` 剩餘的秒數，以及上移、下移、編輯、刪除。順序就是優先順序，因為第一條符合的規則生效。
+- 新增與編輯用同一張表單，列出規則的全部欄位：`unitId`、`registerType`、`addressRange`、`direction`、`action`、`everyNth`、`forSeconds`。條件欄位留空表示不限。`action` 三選一：`exception` 加 code、`no_response`、`delay` 加毫秒數。表單用 `ServerFaultRuleSchema` 驗證，不合格不送出。
+- 對話框底部：新增、重新整理、全部清除。
+- main window 與 server window 都有。每個可互動的元素帶 `data-testid`。
+
+**Channel。**
+
+- `set_server_faults`：`uuid` 與 `rules`，整份取代。帶物件，所以要有 schema。
+- `get_server_fault_status`：`uuid`，回 `ServerFaultRuleStatus[]`。
+- 清除沿用 `clear_server_faults`，清單的變動沿用 `server_faults` 事件。
+
+**次數不自動更新。** 開啟對話框、收到 `server_faults`、按重新整理時各讀一次 `get_server_fault_status`。
+
+**不變的。** 規則仍然不存檔。MCP 的四個 tool 與規則的形狀不動。
+
+**文件。** `docs/mcp.md` 補一句：規則也能在 Server 畫面上編輯，以及整份取代會讓次數與倒數重來。
+
+**測試。** 表單的驗證與每個欄位、摘要文字、上移下移；一條 e2e：在畫面上新增一條 exception 規則，Client 讀取得到該 exception，對話框的次數在重新整理後增加，編輯、移動、刪除、全部清除各走一次，並確認 MCP 的 `server_get_faults` 看到畫面設的規則。
 
 ## 還沒實測，先寫測試再做
 
