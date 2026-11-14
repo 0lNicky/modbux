@@ -7,6 +7,7 @@ import {
 } from '@shared'
 import type { FCallback, FCallbackVal, IServiceVector } from 'modbus-serial'
 import { ServerRegistry } from './registry'
+import { ServerRequestLog } from './requestLog'
 
 /**
  * The three Modbus exception codes this server sends.
@@ -30,8 +31,7 @@ export type ServerTransport = 'tcp' | 'rtu'
 export const BROADCAST_UNIT_ID: UnitIdString = '0'
 
 /**
- * One accessor shape per direction, because `IServiceVector`'s four getters and
- * two setters differ only in the value they carry.
+ * The accessor shapes `createVector` fills.
  *
  * These are written out rather than derived from `IServiceVector`, so what
  * checks them is the assignment in `createVector`. That catches a signature
@@ -39,16 +39,63 @@ export const BROADCAST_UNIT_ID: UnitIdString = '0'
  * that adds an optional parameter stays assignable to these.
  */
 type IServiceVectorGet<T> = (addr: number, unitID: number, cb: FCallbackVal<T>) => void
+type IServiceVectorGetMultiple = (
+  addr: number,
+  length: number,
+  unitID: number,
+  cb: FCallbackVal<number[]>
+) => void
 type IServiceVectorSet<T> = (addr: number, value: T, unitID: number, cb: FCallback) => void
 
-/**
- * Helper for returning a Modbus error via callback.
- */
-const mbError = <T>(code: number, cb: FCallbackVal<T>, value: T): void => {
-  const err = new Error()
-  err['modbusErrorCode'] = code
-  cb(err, value)
+/** What the vector is bound to: one uuid of one registry, on one transport. */
+interface VectorScope {
+  registry: ServerRegistry
+  requestLog: ServerRequestLog
+  uuid: string
+  transport: ServerTransport
 }
+
+/** One request, whole, as modbus-serial handed it over in one or more calls. */
+interface ServerRequestInput<K extends RegisterType> {
+  unitId: number
+  registerType: K
+  address: number
+  count: number
+  /** What a write carries, one per address. A read has none. */
+  values?: ServerDataValue<K>[]
+}
+
+/**
+ * A request the vector accepted.
+ *
+ * `reply` is false for an RTU broadcast write, which is written and never
+ * answered. `read` answers the value at an offset from the first address, and
+ * a write's is never asked.
+ */
+interface ServerAnswerOk<K extends RegisterType> {
+  outcome: 'ok'
+  reply: boolean
+  read: (offset: number) => ServerDataValue<K>
+}
+
+/**
+ * A request the vector refused with an exception code. `reply` is false where
+ * the handler has already sent that exception itself.
+ */
+interface ServerAnswerException {
+  outcome: 'exception'
+  code: number
+  reply: boolean
+}
+
+/** What the vector answers a request. */
+type ServerAnswer<K extends RegisterType> =
+  | ServerAnswerOk<K>
+  | ServerAnswerException
+  | { outcome: 'no_response' }
+
+/** A Modbus error as modbus-serial reads one: an `Error` carrying the code. */
+const modbusError = (code: number): Error => Object.assign(new Error(), { modbusErrorCode: code })
 
 /**
  * Unit 0 is broadcast on RTU. On TCP there is no broadcast at all and the
@@ -61,99 +108,341 @@ const isBroadcast = (transport: ServerTransport, unitId: UnitIdString): boolean 
  * Answers a request for a unit id this server does not host.
  *
  * modbus-serial writes a frame when the vector calls `cb` and writes nothing
- * when it does not, so returning without calling it is silence on the wire.
+ * when it does not, so an answer that calls no `cb` is silence on the wire.
  * On RS-485 silence is the only safe answer: the id belongs to a real device
  * answering at that moment, and a second frame collides with it. A socket
  * carries one device, so silence there is a client timeout instead, and the
  * gateway code says what happened.
  */
-const refuseUnit = <T>(transport: ServerTransport, cb: FCallbackVal<T>, value: T): void => {
-  if (transport === 'rtu') return
-  mbError(GATEWAY_TARGET_FAILED, cb, value)
+const refuseUnit = <K extends RegisterType>(transport: ServerTransport): ServerAnswer<K> =>
+  transport === 'rtu'
+    ? { outcome: 'no_response' }
+    : { outcome: 'exception', code: GATEWAY_TARGET_FAILED, reply: true }
+
+/**
+ * Decides a whole request, reads or writes it, and records it.
+ *
+ * Every check runs before the first address is read or written, so a write is
+ * all of its addresses or none of them, and the answer is one decision about
+ * the request rather than one per address.
+ */
+const serve = <K extends RegisterType>(
+  { registry, requestLog, uuid, transport }: VectorScope,
+  request: ServerRequestInput<K>,
+  fallback: ServerDataValue<K>
+): ServerAnswer<K> => {
+  const decide = (): ServerAnswer<K> => {
+    const unitIdSafe = UnitIdStringSchema.safeParse(String(request.unitId))
+    if (!unitIdSafe.success) {
+      return { outcome: 'exception', code: SERVER_DEVICE_FAILURE, reply: true }
+    }
+    const unitId = unitIdSafe.data
+    const { registerType, address, count, values } = request
+
+    // The handler answers a zero-length FC16 with exception 2 and calls
+    // `setRegisterArray` with an empty array afterwards, and any `cb` called
+    // then sends a second frame. The vector records that exception and adds
+    // nothing.
+    if (count === 0) return { outcome: 'exception', code: ILLEGAL_DATA_ADDRESS, reply: false }
+
+    // A request running past the top of the range asks for addresses the
+    // protocol cannot express, and neither a map nor `registry.write` refuses
+    // one, so the range is asked before any address is read or written.
+    const inRange = address + count - 1 <= MAX_REGISTER_ADDRESS
+
+    // A broadcast write reaches every unit on the bus and is never answered,
+    // and a broadcast read has nothing to answer with. One out of range is
+    // written nowhere, and the silence stays.
+    if (isBroadcast(transport, unitId)) {
+      if (!values || !inRange) return { outcome: 'no_response' }
+      for (const hostedUnitId of registry.hostedUnitIds(uuid))
+        for (const [offset, value] of values.entries())
+          registry.write(registerType, uuid, hostedUnitId, address + offset, value)
+      return { outcome: 'ok', reply: false, read: () => fallback }
+    }
+
+    if (!registry.hostsUnit(uuid, unitId)) return refuseUnit(transport)
+    if (!inRange) return { outcome: 'exception', code: ILLEGAL_DATA_ADDRESS, reply: true }
+
+    // The request is whole and accepted here: nothing above read or wrote.
+    if (values) {
+      for (const [offset, value] of values.entries())
+        registry.write(registerType, uuid, unitId, address + offset, value)
+      return { outcome: 'ok', reply: true, read: () => fallback }
+    }
+
+    // An address inside the range with no entry is a register nobody
+    // configured, and it answers 0 or false.
+    return {
+      outcome: 'ok',
+      reply: true,
+      read: (offset) => registry.read(uuid, unitId, registerType, address + offset) ?? fallback
+    }
+  }
+
+  const answer = decide()
+  requestLog.record({
+    timestamp: Date.now(),
+    uuid,
+    unitId: request.unitId,
+    direction: request.values ? 'write' : 'read',
+    registerType: request.registerType,
+    address: request.address,
+    count: request.count,
+    outcome: answer.outcome,
+    ...(answer.outcome === 'exception' && { exceptionCode: answer.code }),
+    ...(request.values && { values: request.values })
+  })
+  return answer
 }
 
 /**
- * Returns the value of a register type for a given address and unitId.
- * Calls the callback with the value or a Modbus error.
+ * How one accessor's callbacks are answered: `ok` for an accepted request at
+ * an offset from its first address, `refuse` with a Modbus error.
+ */
+interface Replies<K extends RegisterType, C> {
+  ok: (cb: C, answer: ServerAnswerOk<K>, offset: number) => void
+  refuse: (cb: C, error: Error) => void
+}
+
+/**
+ * Hands an answer to the callbacks modbus-serial gave for the request's
+ * addresses, one per address for the bit accessors and one in all for the
+ * others.
  *
- * Synchronous, like `set`: `servertcp_handler.js` calls a three-argument
- * accessor inside try/catch and discards what it returns, so a throw from
- * here is answered exception 4. An `async` accessor throws into a rejection
- * nothing holds, and the client waits out its timeout instead.
+ * An exception goes to the first callback alone, because the handler answers
+ * the first error it is given and ignores the rest. Silence calls none, and
+ * neither does an exception the handler has already sent.
+ */
+const reply = <K extends RegisterType, C>(
+  answer: ServerAnswer<K>,
+  callbacks: readonly C[],
+  { ok, refuse }: Replies<K, C>
+): void => {
+  if (answer.outcome === 'no_response') return
+  if (answer.outcome === 'exception') {
+    if (!answer.reply) return
+    for (const cb of callbacks.slice(0, 1)) refuse(cb, modbusError(answer.code))
+    return
+  }
+  if (!answer.reply) return
+  for (const [offset, cb] of callbacks.entries()) ok(cb, answer, offset)
+}
+
+/**
+ * A refusal handing `value` beside the error, which is what the accessors
+ * handed before they answered whole requests. The handler reads it on one path
+ * only, which `getMultiple` explains.
+ */
+const refuseWith =
+  <T>(value: T) =>
+  (cb: FCallbackVal<T>, error: Error): void =>
+    cb(error, value)
+
+/** A write's acknowledgement, which carries nothing. */
+const acknowledge = (cb: FCallback): void => cb(null)
+
+/**
+ * The single-address register read, FC3 or FC4 for one register.
+ *
+ * modbus-serial calls the multi-register accessor only when the count is above
+ * one, so a one-register read arrives here and is a request of its own.
+ *
+ * Synchronous, like every accessor here that is not collected: the handler
+ * calls a three-argument accessor inside try/catch and discards what it
+ * returns, so a throw from `cb` is answered exception 4. An `async` accessor
+ * throws into a rejection nothing holds, and the client waits out its timeout
+ * instead.
  */
 const get =
-  <K extends RegisterType>(
-    registry: ServerRegistry,
-    registerType: K,
-    uuid: string,
-    transport: ServerTransport,
-    fallback: ServerDataValue<K>
-  ): IServiceVectorGet<ServerDataValue<K>> =>
-  (address, unitIdNumber, cb) => {
-    const unitId = UnitIdStringSchema.safeParse(String(unitIdNumber))
-    if (!unitId.success) return mbError(SERVER_DEVICE_FAILURE, cb, fallback)
-    // A broadcast is never acknowledged, so there is nothing to read from one.
-    if (isBroadcast(transport, unitId.data)) return
-    if (!registry.hostsUnit(uuid, unitId.data)) return refuseUnit(transport, cb, fallback)
-
-    // A multi-word read at the top of the range asks for addresses the
-    // protocol cannot express. The arrays answered `undefined` past their
-    // last index and a map answers it for every address it has no entry for,
-    // so the range is asked here and the entry only after.
-    if (address > MAX_REGISTER_ADDRESS) return mbError(ILLEGAL_DATA_ADDRESS, cb, fallback)
-
-    const value = registry.read(uuid, unitId.data, registerType, address)
-
-    // An address inside the range with no entry is a register nobody
-    // configured, and the arrays answered 0 or false for it.
-    cb(null, value ?? fallback)
-  }
+  (
+    scope: VectorScope,
+    registerType: 'input_registers' | 'holding_registers'
+  ): IServiceVectorGet<number> =>
+  (address, unitId, cb) =>
+    reply(serve(scope, { unitId, registerType, address, count: 1 }, 0), [cb], {
+      ok: (callback, answer) => callback(null, answer.read(0)),
+      refuse: refuseWith(0)
+    })
 
 /**
- * Sets the value of a coil or holding register for a given address and unitId.
- * Updates the server data and emits a value change event.
- */
-const set =
-  <K extends RegisterType>(
-    registry: ServerRegistry,
-    registerType: K,
-    uuid: string,
-    transport: ServerTransport
-  ): IServiceVectorSet<ServerDataValue<K>> =>
-  (address, value, unitIdNumber, cb) => {
-    const unitIdSafe = UnitIdStringSchema.safeParse(String(unitIdNumber))
-    if (!unitIdSafe.success) return mbError(SERVER_DEVICE_FAILURE, cb, 0)
-    const unitId = unitIdSafe.data
-
-    // A broadcast write reaches every unit on the bus and is never answered.
-    if (isBroadcast(transport, unitId)) {
-      for (const hostedUnitId of registry.hostedUnitIds(uuid))
-        registry.write(registerType, uuid, hostedUnitId, address, value)
-      return
-    }
-
-    if (!registry.hostsUnit(uuid, unitId)) return refuseUnit(transport, cb, 0)
-
-    registry.write(registerType, uuid, unitId, address, value)
-    cb(null)
-  }
-
-/**
- * The six accessors modbus-serial calls when a frame arrives.
+ * The multi-register read, FC3 or FC4 for two registers or more.
  *
- * Built once per listener and bound to a uuid, and each accessor reads the
- * registry at the moment it is called. That is why a register added after a
- * server is up needs no rebind.
+ * The error goes with an empty array rather than nothing: FC4's handler reads
+ * `values[i]` on its error path too, and on `undefined` that throws, which it
+ * answers exception 4 whatever code the error carried.
+ */
+const getMultiple =
+  (
+    scope: VectorScope,
+    registerType: 'input_registers' | 'holding_registers'
+  ): IServiceVectorGetMultiple =>
+  (address, count, unitId, cb) =>
+    reply(serve(scope, { unitId, registerType, address, count }, 0), [cb], {
+      ok: (callback, answer) =>
+        callback(
+          null,
+          Array.from({ length: count }, (_, offset) => answer.read(offset))
+        ),
+      refuse: refuseWith<number[]>([])
+    })
+
+/** The single-register write, FC6. */
+const setRegister =
+  (scope: VectorScope): IServiceVectorSet<number> =>
+  (address, value, unitId, cb) =>
+    reply(
+      serve(
+        scope,
+        { unitId, registerType: 'holding_registers', address, count: 1, values: [value] },
+        0
+      ),
+      [cb],
+      { ok: acknowledge, refuse: refuseWith(0) }
+    )
+
+/** The multi-register write, FC16: every address or none. */
+const setRegisterArray =
+  (scope: VectorScope): IServiceVectorSet<number[]> =>
+  (address, values, unitId, cb) =>
+    reply(
+      serve(
+        scope,
+        { unitId, registerType: 'holding_registers', address, count: values.length, values },
+        0
+      ),
+      [cb],
+      { ok: acknowledge, refuse: refuseWith(0) }
+    )
+
+/** One address of a bit request, as one accessor call handed it over. */
+interface BitCall<V, C> {
+  /** What a write carries at this address. */
+  value: V
+  cb: C
+}
+
+/** The calls of one bit request, collected until the run that made them ends. */
+interface BitBatch<V, C> {
+  unitId: number
+  address: number
+  nextAddress: number
+  calls: BitCall<V, C>[]
+}
+
+/**
+ * Collects the per-address calls of a bit accessor into requests.
+ *
+ * FC1, FC2, FC5 and FC15 reach the vector one address at a time. modbus-serial
+ * has no whole-request accessor for the two reads, and the one for FC15 does
+ * not work: its handler answers success before it calls `setCoilArray`, so
+ * that accessor can neither refuse nor stay silent.
+ *
+ * The calls of one frame are made in one synchronous run, and modbus-serial
+ * starts every frame from its own `setTimeout`, so the microtask queued by a
+ * frame's first call runs after its last call and before the next frame. A
+ * call that does not continue the open batch, another unit or an address that
+ * is not the next one, starts a batch of its own.
+ */
+const collectBits = <V, C>(
+  onRequest: (batch: BitBatch<V, C>) => void
+): ((address: number, unitId: number, value: V, cb: C) => void) => {
+  const queued: BitBatch<V, C>[] = []
+  let open: BitBatch<V, C> | undefined
+
+  const flush = (): void => {
+    open = undefined
+    for (const batch of queued.splice(0)) onRequest(batch)
+  }
+
+  return (address, unitId, value, cb) => {
+    if (!open || open.unitId !== unitId || open.nextAddress !== address) {
+      open = { unitId, address, nextAddress: address, calls: [] }
+      queued.push(open)
+      if (queued.length === 1) queueMicrotask(flush)
+    }
+    open.calls.push({ value, cb })
+    open.nextAddress = address + 1
+  }
+}
+
+/**
+ * Answers collected callbacks the way the handler calls an accessor: inside
+ * try/catch, and a throw is answered exception 4, which is what the handler's
+ * own catch answers. A collected answer runs from a microtask, where nothing of
+ * modbus-serial's would catch it.
+ */
+const guarded = <K extends RegisterType, C>({ ok, refuse }: Replies<K, C>): Replies<K, C> => ({
+  ok: (cb, answer, offset): void => {
+    try {
+      ok(cb, answer, offset)
+    } catch {
+      refuse(cb, modbusError(SERVER_DEVICE_FAILURE))
+    }
+  },
+  refuse: (cb, error): void => {
+    try {
+      refuse(cb, error)
+    } catch {
+      refuse(cb, modbusError(SERVER_DEVICE_FAILURE))
+    }
+  }
+})
+
+/** A bit read, FC1 or FC2, answered once the request's last address has arrived. */
+const getBits = (
+  scope: VectorScope,
+  registerType: 'coils' | 'discrete_inputs'
+): IServiceVectorGet<boolean> => {
+  const collect = collectBits<undefined, FCallbackVal<boolean>>(({ unitId, address, calls }) =>
+    reply(
+      serve(scope, { unitId, registerType, address, count: calls.length }, false),
+      calls.map(({ cb }) => cb),
+      guarded({
+        ok: (cb, answer, offset) => cb(null, answer.read(offset)),
+        refuse: refuseWith(false)
+      })
+    )
+  )
+  return (address, unitId, cb) => collect(address, unitId, undefined, cb)
+}
+
+/** A coil write, FC5 or FC15, answered once the request's last address has arrived. */
+const setCoils = (scope: VectorScope): IServiceVectorSet<boolean> => {
+  const collect = collectBits<boolean, FCallback>(({ unitId, address, calls }) => {
+    const values = calls.map(({ value }) => value)
+    reply(
+      serve(scope, { unitId, registerType: 'coils', address, count: values.length, values }, false),
+      calls.map(({ cb }) => cb),
+      guarded({ ok: acknowledge, refuse: refuseWith(0) })
+    )
+  })
+  return (address, value, unitId, cb) => collect(address, unitId, value, cb)
+}
+
+/**
+ * The accessors modbus-serial calls when a frame arrives.
+ *
+ * Built once per listener and bound to a uuid, and each request reads the
+ * registry when it arrives. That is why a register added after a server is up
+ * needs no rebind.
  */
 export const createVector = (
   registry: ServerRegistry,
+  requestLog: ServerRequestLog,
   uuid: string,
   transport: ServerTransport
-): IServiceVector => ({
-  getCoil: get(registry, 'coils', uuid, transport, false),
-  getDiscreteInput: get(registry, 'discrete_inputs', uuid, transport, false),
-  getInputRegister: get(registry, 'input_registers', uuid, transport, 0),
-  getHoldingRegister: get(registry, 'holding_registers', uuid, transport, 0),
-  setCoil: set(registry, 'coils', uuid, transport),
-  setRegister: set(registry, 'holding_registers', uuid, transport)
-})
+): IServiceVector => {
+  const scope: VectorScope = { registry, requestLog, uuid, transport }
+  return {
+    getCoil: getBits(scope, 'coils'),
+    getDiscreteInput: getBits(scope, 'discrete_inputs'),
+    getInputRegister: get(scope, 'input_registers'),
+    getHoldingRegister: get(scope, 'holding_registers'),
+    getMultipleInputRegisters: getMultiple(scope, 'input_registers'),
+    getMultipleHoldingRegisters: getMultiple(scope, 'holding_registers'),
+    setCoil: setCoils(scope),
+    setRegister: setRegister(scope),
+    setRegisterArray: setRegisterArray(scope)
+  }
+}

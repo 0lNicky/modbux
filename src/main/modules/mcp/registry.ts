@@ -32,8 +32,8 @@ export interface McpToolContext {
     AppState,
     'connectionConfig' | 'registerConfig' | 'registerMapping' | 'readConfiguration'
   >
-  /** The Modbus servers' registers, which hold the words a master reads. */
-  server: Pick<ModbusServer, 'readRegisters'>
+  /** The Modbus servers' registers, and the requests masters sent them. */
+  server: Pick<ModbusServer, 'readRegisters' | 'getRequests'>
   rendererCommands: Pick<RendererCommands, 'send'>
   /** Whether the main window is open, which every tool needs (已決定 4). */
   mainWindowOpen: () => boolean

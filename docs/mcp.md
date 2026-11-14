@@ -67,3 +67,11 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 - 掃描 tools 不附 `failedTransactions`：每個無回應的 unit 都是一筆 timeout，只是雜訊。要看就呼叫 `client_get_transactions`。
 
 紀錄的 frame 在 TCP 與 RTU 下都是 unit id、function code、資料、CRC，不含 MBAP header。
+
+## Server 請求紀錄
+
+- `server_get_requests`：`readOnlyHint`。回傳主站對某台 Server 送出的請求，由舊到新，一個請求一筆，不論位址數量。參數：`uuid`（省略時用主 Server）、`limit`（預設 50）、`sinceTimestamp`（毫秒，含該時刻）、`failedOnly`（只回 exception 與沒回應的請求）。
+- 每筆有 `timestamp`、`uuid`、`unitId`、`direction`（`read` 或 `write`）、`registerType`、`address`（第一個 PDU 位址）、`count`、`outcome`（`ok`、`exception` 加 `exceptionCode`、`no_response`），寫入另有 `values`。
+- 每台 Server 在 main 的記憶體保留最近的紀錄，上限寫在 tool 說明裡。刪除 Server 時清掉，不存檔。
+- RTU 的 unit 0 是 broadcast：讀取不回應，記為 `no_response`；寫入寫進每個有資料的 unit、不回應，記為 `ok`。超過位址 65535 的 broadcast 寫入一個位址都不寫，記為 `no_response`。
+- 不存在的 `uuid` 回空清單。這個 tool 不經過 renderer，所以 Server 畫面拆到另一個視窗時也能用。

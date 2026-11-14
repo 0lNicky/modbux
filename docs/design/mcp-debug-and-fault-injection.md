@@ -24,7 +24,8 @@
 - Server 的每個請求都經過 `modbusServer/vector.ts` 的 `get` 與 `set`。`rtu.ts` 與 `tcp.ts` 用同一個 `createVector`。
 - `vector.ts` 已經用 `mbError` 回 exception 2、4、11，`refuseUnit` 已經用不呼叫 `cb` 做到不回應。
 - `servertcp_handler.js` 讀多個位址時，對每個位址呼叫一次 accessor，用計數器收齊 `cb` 後才組包。任何一個 `cb` 帶錯誤，整個請求回 exception。`serverserial.js` 用的是同一個 handler。
-- 同一個 handler 在 vector 有 `getMultipleHoldingRegisters`、`getMultipleInputRegisters`、`setRegisterArray`、`setCoilArray` 時改呼叫它們，一個請求一次。Modbux 的 vector 目前沒有這四個。coil 與 discrete input 的讀取沒有整個請求的 accessor。
+- 同一個 handler 在 vector 有 `getMultipleHoldingRegisters`、`getMultipleInputRegisters`、`setRegisterArray`、`setCoilArray` 時改呼叫它們，一個請求一次。兩個 `getMultiple*` 只在數量大於 1 時呼叫，讀一個 register 仍走 `getHoldingRegister` 與 `getInputRegister`。coil 與 discrete input 的讀取沒有整個請求的 accessor。
+- `setCoilArray` 不能用。modbus-serial 8.0.25 的 FC15 handler 先把每個位址的 `cb` 都呼叫完、回了成功，才呼叫 `setCoilArray`，所以它回不了 exception，也做不到不回應。
 - FC16 現在是逐位址呼叫 `setRegister`，每次立刻寫進 registry。
 - Server 沒有請求紀錄。
 - `McpToolContext.server`（`registry.ts`）目前只有 `readRegisters`。
@@ -64,8 +65,8 @@
 
 ### B. Server 請求紀錄
 
-1. **記錄與判斷的單位是一個請求，不是一次 accessor 呼叫。** register 的讀取改用 `getMultipleHoldingRegisters` 與 `getMultipleInputRegisters`，多筆寫入改用 `setRegisterArray` 與 `setCoilArray`，vector 一次看到整個請求。coil 與 discrete input 的讀取沒有這種 accessor：同一個請求的呼叫在同一段同步執行內，兩個 frame 各自經過一次 `setTimeout`，所以收集到這段同步執行結束再一起回答。
-2. **多筆寫入因此是整筆成立或整筆不成立。** 現在 FC16 寫到一半遇到錯誤時，前面的位址已經寫入。改用 array accessor 後，先檢查整個請求，通過才寫。
+1. **記錄與判斷的單位是一個請求，不是一次 accessor 呼叫。** register 的讀取改用 `getMultipleHoldingRegisters` 與 `getMultipleInputRegisters`，FC16 改用 `setRegisterArray`，vector 一次看到整個請求。coil 與 discrete input 的讀取沒有這種 accessor，FC15 的 `setCoilArray` 不能用（見現況），所以這三種照舊逐位址呼叫 `getCoil`、`getDiscreteInput`、`setCoil`：同一個請求的呼叫在同一段同步執行內，兩個 frame 各自經過一次 `setTimeout`，所以收集到這段同步執行結束再一起回答。
+2. **多筆寫入因此是整筆成立或整筆不成立。** 現在 FC16 寫到一半遇到錯誤時，前面的位址已經寫入。改成先檢查整個請求，通過才寫。FC16 與 FC15 都是。
 3. **一筆的內容：** `timestamp`、Server 的 `uuid`、`unitId`、`direction`（`read` 或 `write`）、`registerType`、`address`（第一個位址）、`count`、`outcome`（`ok`、`exception` 加 code、`no_response`）、選填的 `fault`。寫入另外記寫進來的值。`fault` 在 B 只定義形狀，由 C 填入：生效的是第幾條規則，以及延遲的毫秒數。有它，注入的 exception 才和 Server 自己回的分得開，延遲的請求也不會只記成 `ok`。
 4. **每台 Server 保留最近的紀錄，有上限。** Server 刪除時一併清掉。不存檔。
 5. **`server_get_requests`。** `readOnlyHint`。參數：`uuid`（省略時用主 Server）、`limit`（預設 50）、`sinceTimestamp`、`failedOnly`。

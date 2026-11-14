@@ -21,6 +21,7 @@ import type {
   ScanUnitIdsOutcome,
   WriteOutcome
 } from '../../modbusClient'
+import { ServerRequestLog } from '../../modbusServer/requestLog'
 import type { LoggedTransaction } from '../../modbusClient/transactionLog'
 import { McpToolContext } from '../registry'
 import { createMcpServer } from '../server'
@@ -52,6 +53,8 @@ export interface FakeContext extends McpToolContext {
     address: number,
     words: number[]
   ) => void
+  /** The stand-in server's request log, which `server.getRequests` reads. */
+  serverRequests: ServerRequestLog
   read: ReturnType<typeof vi.fn<() => Promise<ReadOutcome>>>
   scanRegisters: ReturnType<typeof vi.fn<McpToolContext['client']['scanRegisters']>>
   scanUnitIds: ReturnType<typeof vi.fn<McpToolContext['client']['scanUnitIds']>>
@@ -92,6 +95,7 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
         (_, offset) => serverWords.get(wordKey(uuid, unitId, registerType, address + offset)) ?? 0
       )
   )
+  const serverRequests = new ServerRequestLog()
   const registerConfig = { ...defaultRegisterConfig }
   const connectionConfig = { ...defaultConnectionConfig, unitId: 7 }
 
@@ -179,7 +183,10 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
       }
     },
     rendererCommands: { send: send as unknown as McpToolContext['rendererCommands']['send'] },
-    server: { readRegisters },
+    server: {
+      readRegisters,
+      getRequests: (uuid, filter) => serverRequests.list(uuid, filter)
+    },
     mainWindowOpen: () => mainWindowOpen,
     allowWrites: () => allowWrites,
     setClientState: (state) => {
@@ -205,6 +212,7 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
         serverWords.set(wordKey(uuid, unitId, registerType, address + offset), word)
       }
     },
+    serverRequests,
     read,
     scanRegisters,
     scanUnitIds,
