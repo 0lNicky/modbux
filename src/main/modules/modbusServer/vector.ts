@@ -78,10 +78,20 @@ interface ServerAnswerOk<K extends RegisterType> {
   read: (offset: number) => ServerDataValue<K>
 }
 
+/**
+ * A request the vector refused with an exception code. `reply` is false where
+ * the handler has already sent that exception itself.
+ */
+interface ServerAnswerException {
+  outcome: 'exception'
+  code: number
+  reply: boolean
+}
+
 /** What the vector answers a request. */
 type ServerAnswer<K extends RegisterType> =
   | ServerAnswerOk<K>
-  | { outcome: 'exception'; code: number }
+  | ServerAnswerException
   | { outcome: 'no_response' }
 
 /** A Modbus error as modbus-serial reads one: an `Error` carrying the code. */
@@ -107,7 +117,7 @@ const isBroadcast = (transport: ServerTransport, unitId: UnitIdString): boolean 
 const refuseUnit = <K extends RegisterType>(transport: ServerTransport): ServerAnswer<K> =>
   transport === 'rtu'
     ? { outcome: 'no_response' }
-    : { outcome: 'exception', code: GATEWAY_TARGET_FAILED }
+    : { outcome: 'exception', code: GATEWAY_TARGET_FAILED, reply: true }
 
 /**
  * Decides a whole request, reads or writes it, and records it.
@@ -123,14 +133,28 @@ const serve = <K extends RegisterType>(
 ): ServerAnswer<K> => {
   const decide = (): ServerAnswer<K> => {
     const unitIdSafe = UnitIdStringSchema.safeParse(String(request.unitId))
-    if (!unitIdSafe.success) return { outcome: 'exception', code: SERVER_DEVICE_FAILURE }
+    if (!unitIdSafe.success) {
+      return { outcome: 'exception', code: SERVER_DEVICE_FAILURE, reply: true }
+    }
     const unitId = unitIdSafe.data
     const { registerType, address, count, values } = request
 
+    // The handler answers a zero-length FC16 with exception 2 and calls
+    // `setRegisterArray` with an empty array afterwards, and any `cb` called
+    // then sends a second frame. The vector records that exception and adds
+    // nothing.
+    if (count === 0) return { outcome: 'exception', code: ILLEGAL_DATA_ADDRESS, reply: false }
+
+    // A request running past the top of the range asks for addresses the
+    // protocol cannot express, and neither a map nor `registry.write` refuses
+    // one, so the range is asked before any address is read or written.
+    const inRange = address + count - 1 <= MAX_REGISTER_ADDRESS
+
     // A broadcast write reaches every unit on the bus and is never answered,
-    // and a broadcast read has nothing to answer with.
+    // and a broadcast read has nothing to answer with. One out of range is
+    // written nowhere, and the silence stays.
     if (isBroadcast(transport, unitId)) {
-      if (!values) return { outcome: 'no_response' }
+      if (!values || !inRange) return { outcome: 'no_response' }
       for (const hostedUnitId of registry.hostedUnitIds(uuid))
         for (const [offset, value] of values.entries())
           registry.write(registerType, uuid, hostedUnitId, address + offset, value)
@@ -138,13 +162,7 @@ const serve = <K extends RegisterType>(
     }
 
     if (!registry.hostsUnit(uuid, unitId)) return refuseUnit(transport)
-
-    // A request running past the top of the range asks for addresses the
-    // protocol cannot express. A map answers `undefined` for every address it
-    // has no entry for, so the range is asked here and the entry only after.
-    if (address + count - 1 > MAX_REGISTER_ADDRESS) {
-      return { outcome: 'exception', code: ILLEGAL_DATA_ADDRESS }
-    }
+    if (!inRange) return { outcome: 'exception', code: ILLEGAL_DATA_ADDRESS, reply: true }
 
     // The request is whole and accepted here: nothing above read or wrote.
     if (values) {
@@ -193,7 +211,8 @@ interface Replies<K extends RegisterType, C> {
  * others.
  *
  * An exception goes to the first callback alone, because the handler answers
- * the first error it is given and ignores the rest. Silence calls none.
+ * the first error it is given and ignores the rest. Silence calls none, and
+ * neither does an exception the handler has already sent.
  */
 const reply = <K extends RegisterType, C>(
   answer: ServerAnswer<K>,
@@ -202,6 +221,7 @@ const reply = <K extends RegisterType, C>(
 ): void => {
   if (answer.outcome === 'no_response') return
   if (answer.outcome === 'exception') {
+    if (!answer.reply) return
     for (const cb of callbacks.slice(0, 1)) refuse(cb, modbusError(answer.code))
     return
   }

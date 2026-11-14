@@ -346,6 +346,64 @@ describe('the three outcomes', () => {
 })
 
 describe('a multi-write is all of its addresses or none', () => {
+  // The handler answers a zero-length FC16 with exception 2 and then calls
+  // `setRegisterArray` with an empty array all the same.
+  it('answers a zero-length FC16 once, with exception 2, and records it so', async () => {
+    hostRegister('1', 0, 0)
+    const vector = vectorOn('tcp')
+    const replies: (number | 'ok')[] = []
+
+    handlers.writeMultipleRegisters(frame(1, 16, [0, 0, 0, 0, 0]), vector, 1, (err) =>
+      replies.push(err ? (err.modbusErrorCode ?? SERVER_DEVICE_FAILURE) : 'ok')
+    )
+    await answered()
+
+    expect(replies).toEqual([ILLEGAL_DATA_ADDRESS])
+    expect(requests()).toEqual([
+      expect.objectContaining({ count: 0, outcome: 'exception', exceptionCode: 2 })
+    ])
+  })
+
+  // The handler refuses a zero-length FC1, FC3, FC4 or FC15 itself and calls
+  // no accessor, so the vector neither answers nor records one.
+  it.each([
+    [
+      'FC1',
+      (callback: HandlerCallback) =>
+        handlers.readCoilsOrInputDiscretes(
+          frame(1, 1, [0, 0, 0, 0]),
+          vectorOn('tcp'),
+          1,
+          callback,
+          1
+        )
+    ],
+    [
+      'FC3',
+      (callback: HandlerCallback) =>
+        handlers.readMultipleRegisters(frame(1, 3, [0, 0, 0, 0]), vectorOn('tcp'), 1, callback)
+    ],
+    [
+      'FC4',
+      (callback: HandlerCallback) =>
+        handlers.readInputRegisters(frame(1, 4, [0, 0, 0, 0]), vectorOn('tcp'), 1, callback)
+    ],
+    [
+      'FC15',
+      (callback: HandlerCallback) =>
+        handlers.forceMultipleCoils(frame(1, 15, [0, 0, 0, 0, 0]), vectorOn('tcp'), 1, callback)
+    ]
+  ])("answers a zero-length %s once, with the handler's exception 2", async (_name, handle) => {
+    hostRegister('1', 0, 0)
+    const replies: (number | 'ok')[] = []
+
+    handle((err) => replies.push(err ? (err.modbusErrorCode ?? SERVER_DEVICE_FAILURE) : 'ok'))
+    await answered()
+
+    expect(replies).toEqual([ILLEGAL_DATA_ADDRESS])
+    expect(requests()).toEqual([])
+  })
+
   it('writes every register of an FC16, tells the view of each, and records the values', async () => {
     hostRegister('1', 0, 0)
     windows.send.mockClear()
@@ -441,6 +499,33 @@ describe('a multi-write is all of its addresses or none', () => {
 })
 
 describe('an RTU broadcast write', () => {
+  it('writes no unit for an FC16 running past the top of the range, and records no response', async () => {
+    hostRegister('1', 0, 0)
+    windows.send.mockClear()
+
+    const reply = await writeRegisters(vectorOn('rtu'), 0, 65535, [41, 42])
+
+    expect(reply).toBe('silence')
+    expect(registry.read(uuid, '1', 'holding_registers', 65535)).toBeUndefined()
+    expect(registry.read(uuid, '1', 'holding_registers', 65536)).toBeUndefined()
+    expect(registerValueEvents()).toEqual([])
+    expect(requests()).toEqual([
+      expect.objectContaining({ unitId: 0, direction: 'write', outcome: 'no_response' })
+    ])
+  })
+
+  it('writes no unit for an FC15 running past the top of the range', async () => {
+    hostRegister('1', 0, 0)
+    windows.send.mockClear()
+
+    const reply = await writeCoils(vectorOn('rtu'), 0, 65534, [true, true, true])
+
+    expect(reply).toBe('silence')
+    expect(registry.read(uuid, '1', 'coils', 65534)).toBeUndefined()
+    expect(registerValueEvents()).toEqual([])
+    expect(requests()).toEqual([expect.objectContaining({ unitId: 0, outcome: 'no_response' })])
+  })
+
   it('writes an FC16 to every unit it hosts, answers nothing, and records it ok', async () => {
     hostRegister('1', 0, 0)
     hostRegister('2', 0, 0)

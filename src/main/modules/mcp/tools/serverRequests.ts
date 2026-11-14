@@ -12,7 +12,7 @@ import { defineTool, McpTool, toolResult } from '../registry'
 const serverGetRequests = defineTool({
   name: 'server_get_requests',
   title: 'Read the requests a server answered',
-  description: `The requests Modbus masters sent a Modbux server, oldest first: one entry per request, whatever its count. Each has timestamp (ms since the epoch), uuid, unitId, direction (read or write), registerType, address (the first, as a PDU address), count, outcome (ok, exception with exceptionCode, or no_response), the values a write carried, and fault when a fault rule decided it. The server keeps its newest ${SERVER_REQUEST_LOG_LIMIT} in memory, forgets them when it is deleted, and never saves them. On RTU, unit 0 is broadcast: a read of it gets no response, and a write to it is written to every hosted unit, gets no response, and is recorded ok. An unknown uuid answers no requests.`,
+  description: `The requests Modbus masters sent a Modbux server, oldest first: one entry per request, whatever its count. Each has timestamp (ms since the epoch), uuid, unitId, direction (read or write), registerType, address (the first, as a PDU address), count, outcome (ok, exception with exceptionCode, or no_response), the values a write carried, and fault when a fault rule decided it. The server keeps its newest ${SERVER_REQUEST_LOG_LIMIT} in memory, forgets them when it is deleted, and never saves them. On RTU, unit 0 is broadcast: a read of it gets no response, and a write to it is written to every hosted unit, gets no response, and is recorded ok, unless it runs past address 65535: then nothing is written and it is recorded no_response. An unknown uuid answers no requests.`,
   inputSchema: {
     uuid: z
       .string()
