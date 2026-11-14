@@ -130,7 +130,7 @@
 
 **寫入的做法。**
 
-- **整份取代（採用）。** 畫面把整份清單送給 main，走 MCP 已經在用的 `ModbusServer.setFaults`。`ServerFaults.set` 會把每條規則的次數歸零，並重新開始每個 `forSeconds` 的計時，所以改任何一條，其他規則的計數與倒數都重來。備援用途下這個代價可以接受，對話框裡要寫明。
+- **整份取代（採用）。** 畫面把整份清單送給 main，經 `ModbusServer.replaceFaults` 與 `ServerFaults.replace` 交給 `ServerFaults.set`，與 MCP 的 `server_set_faults` 是同一個取代。`ServerFaults.set` 會把每條規則的次數歸零，並重新開始每個 `forSeconds` 的計時，所以改任何一條，其他規則的計數與倒數都重來。備援用途下這個代價可以接受，對話框裡要寫明。
 - **逐條操作。** 其他規則不受影響，但規則要有 id，MCP 的資料形狀得跟著改。
 - **整份取代，main 保留沒變動的規則的狀態。** `server_set_faults` 的行為會跟著變。
 
@@ -144,9 +144,17 @@
 
 **Channel。**
 
-- `set_server_faults`：`uuid` 與 `rules`，整份取代。帶物件，所以要有 schema。
-- `get_server_fault_status`：`uuid`，回 `ServerFaultRuleStatus[]`。
-- 清除沿用 `clear_server_faults`，清單的變動沿用 `server_faults` 事件。
+- `set_server_faults`：`uuid`、`version` 與 `rules`，整份取代。帶物件，所以要有 schema。回 `{ taken, status }`，payload 不合格時回 `undefined`。
+- `get_server_fault_status`：`uuid`，回 `{ version, rules }`，`rules` 是 `ServerFaultRuleStatus[]`。
+- 清除沿用 `clear_server_faults`，清單的變動沿用 `server_faults` 事件，事件帶 `version`。
+
+**清單的版本。** 畫面送出的清單是從它讀到的清單改出來的，main 的清單若已經變了，整份取代會讓刪掉的規則復活、或丟掉別處加的規則。所以：
+
+- main 為每個 Server 的清單記一個版本。MCP 或畫面的設定、清除、`forSeconds` 到期、刪除 Server 都會換一個新版本。版本來自一個只增不減的計數器，所以同一個 uuid 不會再拿到用過的版本。
+- `set_server_faults` 帶著清單讀到時的版本。main 在同一個同步步驟裡比對版本並取代；版本不符就什麼都不改，回 `taken: false` 與 main 現在的清單。
+- `server_set_faults` 不比對版本，照舊無條件取代。
+- 對話框在第一次狀態還沒回來、有狀態查詢在途中、或另一筆寫入還沒回來時，不提供寫入：新增、上移、下移、刪除與表單的儲存都停用。所以同一個對話框的寫入一筆接一筆，每筆都從前一筆回覆的清單改出來。
+- 寫入被 main 以版本拒絕時，表單與草稿留著，錯誤訊息說規則已經變了，對話框改顯示 main 回的清單。
 
 **次數不自動更新。** 開啟對話框、收到 `server_faults`、按重新整理時各讀一次 `get_server_fault_status`。
 

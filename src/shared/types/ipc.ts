@@ -33,7 +33,8 @@ import type {
   RendererCommandReply,
   McpStatus,
   ServerFaultRule,
-  ServerFaultRuleStatus,
+  ServerFaultStatus,
+  ServerFaultWrite,
   ServerFaults,
   SetServerFaultsParams
 } from '@shared'
@@ -434,22 +435,27 @@ export interface IpcHandlerSpec {
   }
 
   /**
-   * Replace a server's whole fault list, the way `server_set_faults` does over MCP.
+   * Replace a server's whole fault list, but only while main's list is still at
+   * the version the payload names. `server_set_faults` over MCP replaces with
+   * no such check.
    *
-   * Every rule's counts restart and every `forSeconds` clock restarts. Answers
-   * `true` when it took the list, and `undefined` when it refused the payload,
-   * so a window can keep its form open. The list now in effect comes back as
-   * `server_faults`.
+   * A taken list restarts every rule's counts and every `forSeconds` clock, and
+   * `server_faults` carries it. Answers `taken: false` with main's list when the
+   * version is stale, having changed nothing, and `undefined` when it refused
+   * the payload, so a window can keep its form open either way.
    */
   ['set_server_faults']: {
     args: [SetServerFaultsParams]
-    return: true | undefined
+    return: ServerFaultWrite | undefined
   }
 
-  /** A server's (UUID) fault rules in order, each with what it has done, as `server_get_faults` answers. */
+  /**
+   * A server's (UUID) fault rules in order, each with what it has done, as
+   * `server_get_faults` answers, and the version `set_server_faults` sends back.
+   */
   ['get_server_fault_status']: {
     args: [string]
-    return: ServerFaultRuleStatus[]
+    return: ServerFaultStatus
   }
 }
 

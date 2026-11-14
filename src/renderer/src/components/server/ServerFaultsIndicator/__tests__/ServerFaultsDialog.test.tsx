@@ -3,7 +3,7 @@
 import { cleanup, fireEvent as dom, render, screen, within } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ServerFaultRule, ServerFaultRuleStatus } from '@shared'
+import type { ServerFaultRule, ServerFaultStatus, ServerFaultWrite } from '@shared'
 
 vi.mock('notistack', () => ({
   useSnackbar: (): { enqueueSnackbar: () => void } => ({ enqueueSnackbar: vi.fn() }),
@@ -22,20 +22,53 @@ const BUSY = { unitId: 4, action: { kind: 'exception', code: 6 } } as const
 const SILENT = { registerType: 'coils', action: { kind: 'no_response' } } as const
 const SLOW = { direction: 'read', action: { kind: 'delay', ms: 250 }, forSeconds: 60 } as const
 
-const statusOf = (rules: ServerFaultRule[]): ServerFaultRuleStatus[] =>
-  rules.map((rule, i) => ({
-    ...rule,
-    matched: 10 + i,
-    triggered: 5 + i,
-    ...(rule.forSeconds !== undefined && { expiresAt: Date.now() + rule.forSeconds * 1000 })
-  }))
+/** Every list main answers gets the next version, the way main's one counter only grows. */
+let lastVersion = 0
+const statusOf = (rules: ServerFaultRule[]): ServerFaultStatus => {
+  lastVersion += 1
+  return {
+    version: lastVersion,
+    rules: rules.map((rule, i) => ({
+      ...rule,
+      matched: 10 + i,
+      triggered: 5 + i,
+      ...(rule.forSeconds !== undefined && { expiresAt: Date.now() + rule.forSeconds * 1000 })
+    }))
+  }
+}
 
-/** What `get_server_fault_status` answers next, one reply per call, each held until released. */
-let pending: Array<(status: ServerFaultRuleStatus[]) => void> = []
-let answerNow: ServerFaultRuleStatus[] | undefined
+/** What main holds for `UUID`, which `set_server_faults` compares its version against. */
+let main: ServerFaultStatus = statusOf([])
+/** While set, `get_server_fault_status` waits for a test to answer it, one reply per call. */
+let holdStatus = true
+let pending: Array<(status: ServerFaultStatus) => void> = []
 /** While set, `set_server_faults` waits for a test to answer it, one reply per call. */
 let holdWrites = false
-let heldWrites: Array<(answer: true | undefined) => void> = []
+let heldWrites: Array<(answer: ServerFaultWrite | undefined) => void> = []
+
+/** Main holds `rules` from now on, and answers every status request at once. */
+const mainHolds = (rules: ServerFaultRule[]): void => {
+  main = statusOf(rules)
+  holdStatus = false
+}
+
+/**
+ * Main's `replace`: a write at the version it holds is taken, `server_faults`
+ * goes out before the reply as `ServerFaults` sends it, and a stale one changes
+ * nothing.
+ */
+const mainWrites = ({
+  version,
+  rules
+}: {
+  version: number
+  rules: ServerFaultRule[]
+}): ServerFaultWrite => {
+  if (version !== main.version) return { taken: false, status: main }
+  main = statusOf(rules)
+  fireEvent('server_faults', { uuid: UUID, version: main.version, rules })
+  return { taken: true, status: main }
+}
 
 stubRenderer()
 {
@@ -45,25 +78,40 @@ stubRenderer()
     {
       get: (_target, name: string): unknown =>
         name === 'getServerFaultStatus'
-          ? (): Promise<ServerFaultRuleStatus[]> =>
-              answerNow
-                ? Promise.resolve(answerNow)
-                : new Promise((resolve) => {
+          ? (): Promise<ServerFaultStatus> =>
+              holdStatus
+                ? new Promise((resolve) => {
                     pending.push(resolve)
                   })
-          : name === 'setServerFaults' && holdWrites
-            ? (): Promise<true | undefined> =>
-                new Promise((resolve) => {
-                  heldWrites.push(resolve)
-                })
+                : Promise.resolve(main)
+          : name === 'setServerFaults'
+            ? (payload: {
+                version: number
+                rules: ServerFaultRule[]
+              }): Promise<ServerFaultWrite | undefined> =>
+                holdWrites
+                  ? new Promise((resolve) => {
+                      heldWrites.push(resolve)
+                    })
+                  : Promise.resolve(mainWrites(payload))
             : underneath[name]
     }
   ) as never
+}
+
+/** Answers the status request `n` with `status`, and throws when request `n` was never made. */
+const answerStatus = async (n: number, status: ServerFaultStatus): Promise<void> => {
+  const release = pending[n]
+  if (!release) throw new Error(`no status request ${n} is out`)
+  await act(async () => {
+    release(status)
+  })
 }
 const calls: ApiCall[] = []
 recordApiCalls(calls)
 
 const { useServerFaultsDialogZustand } = await import('../serverFaultsDialog.zustand')
+const { ruleOfStatus } = await import('../faultRule')
 const ServerFaultsDialog = (await import('../ServerFaultsDialog')).default
 
 /** Opens the dialog for `UUID` and lets the status request go out. */
@@ -74,13 +122,26 @@ const openDialog = async (): Promise<void> => {
   })
 }
 
-const sets = (): unknown[] =>
-  calls.filter(({ method }) => method === 'setServerFaults').map(({ payload }) => payload)
+type Sent = { uuid: string; version: number; rules: ServerFaultRule[] }
+const sent = (): Sent[] =>
+  calls.filter(({ method }) => method === 'setServerFaults').map(({ payload }) => payload as Sent)
+/** The writes sent, each without the version it carried. */
+const sets = (): unknown[] => sent().map(({ uuid, rules }) => ({ uuid, rules }))
+
+/** The list main delivers in `server_faults` for `UUID`. */
+const announce = (status: ServerFaultStatus): void => {
+  fireEvent('server_faults', {
+    uuid: UUID,
+    version: status.version,
+    rules: status.rules.map(ruleOfStatus)
+  })
+}
 
 beforeEach(() => {
   calls.length = 0
   pending = []
-  answerNow = undefined
+  main = statusOf([])
+  holdStatus = true
   holdWrites = false
   heldWrites = []
   useServerFaultsDialogZustand.getState().close()
@@ -90,7 +151,7 @@ afterEach(cleanup)
 
 describe('what the dialog shows', () => {
   it('asks main for the status of the server it was opened for, and shows one row per rule', async () => {
-    answerNow = statusOf([BUSY, SILENT, SLOW])
+    mainHolds([BUSY, SILENT, SLOW])
 
     await openDialog()
 
@@ -108,7 +169,7 @@ describe('what the dialog shows', () => {
   })
 
   it('shows what each rule has done, and the seconds a forSeconds rule has left', async () => {
-    answerNow = statusOf([BUSY, SILENT, SLOW])
+    mainHolds([BUSY, SILENT, SLOW])
 
     await openDialog()
 
@@ -123,7 +184,7 @@ describe('what the dialog shows', () => {
   })
 
   it('says so when the server has no rules, and offers no clear all', async () => {
-    answerNow = []
+    mainHolds([])
 
     await openDialog()
 
@@ -132,7 +193,7 @@ describe('what the dialog shows', () => {
   })
 
   it('says in one line that a change starts every count and clock over', async () => {
-    answerNow = []
+    mainHolds([])
 
     await openDialog()
 
@@ -142,9 +203,9 @@ describe('what the dialog shows', () => {
   })
 
   it('reads again when refresh is pressed, and shows the new counts', async () => {
-    answerNow = statusOf([BUSY])
+    mainHolds([BUSY])
     await openDialog()
-    answerNow = [{ ...BUSY, matched: 99, triggered: 98 }]
+    main = { version: main.version, rules: [{ ...BUSY, matched: 99, triggered: 98 }] }
 
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-refresh-btn'))
@@ -156,23 +217,23 @@ describe('what the dialog shows', () => {
   })
 
   it('reads again when server_faults names its server, and not when it names another', async () => {
-    answerNow = statusOf([BUSY])
+    mainHolds([BUSY])
     await openDialog()
     calls.length = 0
 
     await act(async () => {
-      fireEvent('server_faults', { uuid: 'another-server', rules: [] })
+      fireEvent('server_faults', { uuid: 'another-server', version: lastVersion + 1, rules: [] })
     })
     expect(calls).toEqual([])
 
     await act(async () => {
-      fireEvent('server_faults', { uuid: UUID, rules: [BUSY] })
+      fireEvent('server_faults', { uuid: UUID, version: lastVersion + 1, rules: [BUSY] })
     })
     expect(calls).toEqual([{ method: 'getServerFaultStatus', payload: UUID }])
   })
 
   it('does not ask while the dialog is closed', () => {
-    fireEvent('server_faults', { uuid: UUID, rules: [BUSY] })
+    fireEvent('server_faults', { uuid: UUID, version: lastVersion + 1, rules: [BUSY] })
 
     expect(calls).toEqual([])
   })
@@ -188,15 +249,11 @@ describe('a status reply that is older than the last server_faults', () => {
     expect(pending).toHaveLength(1)
 
     await act(async () => {
-      fireEvent('server_faults', { uuid: UUID, rules: [SILENT, SLOW] })
+      announce(NEW)
     })
     expect(pending).toHaveLength(2)
-    await act(async () => {
-      pending[1]?.(NEW)
-    })
-    await act(async () => {
-      pending[0]?.(OLD)
-    })
+    await answerStatus(1, NEW)
+    await answerStatus(0, OLD)
 
     expect(screen.getByTestId('server-faults-rule-0-summary')).toHaveTextContent('coils')
     expect(screen.queryByTestId('server-faults-rule-2')).not.toBeInTheDocument()
@@ -206,12 +263,14 @@ describe('a status reply that is older than the last server_faults', () => {
   it('does not put its rules on screen while the newer request is still out', async () => {
     await openDialog()
     await act(async () => {
-      fireEvent('server_faults', { uuid: UUID, rules: [] })
+      announce(statusOf([]))
     })
+    expect(calls).toEqual([
+      { method: 'getServerFaultStatus', payload: UUID },
+      { method: 'getServerFaultStatus', payload: UUID }
+    ])
 
-    await act(async () => {
-      pending[0]?.(OLD)
-    })
+    await answerStatus(0, OLD)
 
     expect(screen.queryByTestId('server-faults-rule-0')).not.toBeInTheDocument()
   })
@@ -222,12 +281,8 @@ describe('a status reply that is older than the last server_faults', () => {
       dom.click(screen.getByTestId('server-faults-refresh-btn'))
     })
 
-    await act(async () => {
-      pending[1]?.(NEW)
-    })
-    await act(async () => {
-      pending[0]?.(OLD)
-    })
+    await answerStatus(1, NEW)
+    await answerStatus(0, OLD)
 
     expect(screen.getAllByTestId(/^server-faults-rule-\d$/)).toHaveLength(2)
   })
@@ -235,9 +290,7 @@ describe('a status reply that is older than the last server_faults', () => {
   it('still shows an answer that nothing overtook', async () => {
     await openDialog()
 
-    await act(async () => {
-      pending[0]?.(OLD)
-    })
+    await answerStatus(0, OLD)
 
     expect(screen.getByTestId('server-faults-rule-0-summary')).toHaveTextContent('unit 4')
   })
@@ -249,14 +302,10 @@ describe('a status reply that is older than the last server_faults', () => {
       useServerFaultsDialogZustand.getState().show('the-other-server')
     })
 
-    await act(async () => {
-      pending[0]?.(OLD)
-    })
+    await answerStatus(0, OLD)
     expect(screen.queryByTestId('server-faults-rule-0')).not.toBeInTheDocument()
 
-    await act(async () => {
-      pending[1]?.(NEW)
-    })
+    await answerStatus(1, NEW)
     expect(screen.getAllByTestId(/^server-faults-rule-\d$/)).toHaveLength(2)
   })
 })
@@ -265,7 +314,7 @@ describe('the buttons that change the list', () => {
   const THREE = [BUSY, SILENT, SLOW]
 
   beforeEach(() => {
-    answerNow = statusOf(THREE)
+    mainHolds(THREE)
   })
 
   it('moves a rule up by sending the list with it one place earlier', async () => {
@@ -334,7 +383,7 @@ describe('the buttons that change the list', () => {
   })
 
   it('refuses a 33rd rule', async () => {
-    answerNow = statusOf(Array.from({ length: 32 }, () => BUSY))
+    mainHolds(Array.from({ length: 32 }, () => BUSY))
 
     await openDialog()
 
@@ -368,7 +417,7 @@ const choose = async (testId: string, option: string): Promise<void> => {
 
 describe('the form', () => {
   beforeEach(() => {
-    answerNow = statusOf([BUSY, SILENT])
+    mainHolds([BUSY, SILENT])
   })
 
   it('opens empty for a new rule, and cannot save until the action is whole', async () => {
@@ -487,6 +536,9 @@ describe('the form', () => {
   })
 })
 
+/** A taken write's reply, carrying a list no dialog under test holds. */
+const TAKEN: ServerFaultWrite = { taken: true, status: statusOf([SILENT, SILENT, SILENT]) }
+
 /** What `set_server_faults` answers next: a refusal is `undefined`. */
 const refuseNextWrite = (): void => {
   const underneath = window.api as unknown as Record<string, unknown>
@@ -507,9 +559,9 @@ const refuseNextWrite = (): void => {
 
 /** Delivers a changed list the way main does: the event, then the status it asks for. */
 const mainChangesTheList = async (rules: ServerFaultRule[]): Promise<void> => {
-  answerNow = statusOf(rules)
+  mainHolds(rules)
   await act(async () => {
-    fireEvent('server_faults', { uuid: UUID, rules })
+    announce(main)
   })
 }
 
@@ -529,7 +581,7 @@ const code = (unitId: number, value: number): ServerFaultRule => ({
 
 describe('an edit while main changes the list', () => {
   beforeEach(() => {
-    answerNow = statusOf(FOUR)
+    mainHolds(FOUR)
   })
 
   const editThird = async (): Promise<void> => {
@@ -600,7 +652,7 @@ describe('an edit while main changes the list', () => {
   const C = { unitId: 2, action: { kind: 'exception', code: 2 } } as const
 
   it('replaces the rule at the place picked when an equal rule sits before it', async () => {
-    answerNow = statusOf([A, B, A])
+    mainHolds([A, B, A])
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-rule-2-edit'))
@@ -614,7 +666,7 @@ describe('an edit while main changes the list', () => {
   })
 
   it('replaces the rule at the place picked after main changed the list around it', async () => {
-    answerNow = statusOf([A, B, A])
+    mainHolds([A, B, A])
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-rule-2-edit'))
@@ -629,7 +681,7 @@ describe('an edit while main changes the list', () => {
   })
 
   it('treats the rule as gone when the list changed and two rules are equal to it', async () => {
-    answerNow = statusOf([four(0), A, B, A])
+    mainHolds([four(0), A, B, A])
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-rule-1-edit'))
@@ -645,7 +697,7 @@ describe('an edit while main changes the list', () => {
   })
 
   it('follows the one equal rule to its new place when the list changed', async () => {
-    answerNow = statusOf([A, B])
+    mainHolds([A, B])
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-rule-0-edit'))
@@ -664,7 +716,7 @@ describe('a write that cannot succeed', () => {
   const full = (): ServerFaultRule[] => Array.from({ length: 32 }, (_, i) => code(i, 6))
 
   it('keeps the form and the draft when the list filled up under it, and says why', async () => {
-    answerNow = statusOf(full().slice(0, 31))
+    mainHolds(full().slice(0, 31))
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-add-btn'))
@@ -684,7 +736,7 @@ describe('a write that cannot succeed', () => {
   })
 
   it('keeps the form when main refuses the list, and shows that', async () => {
-    answerNow = statusOf([BUSY])
+    mainHolds([BUSY])
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-add-btn'))
@@ -702,7 +754,7 @@ describe('a write that cannot succeed', () => {
   })
 
   it('shows a refused delete or move on the list, and leaves the list as it was', async () => {
-    answerNow = statusOf([BUSY, SILENT])
+    mainHolds([BUSY, SILENT])
     await openDialog()
     refuseNextWrite()
 
@@ -715,7 +767,7 @@ describe('a write that cannot succeed', () => {
   })
 
   it('clears the message once a write goes through', async () => {
-    answerNow = statusOf([BUSY, SILENT])
+    mainHolds([BUSY, SILENT])
     await openDialog()
     refuseNextWrite()
     await act(async () => {
@@ -730,7 +782,7 @@ describe('a write that cannot succeed', () => {
   })
 
   it('takes the list that fills the limit exactly', async () => {
-    answerNow = statusOf(full().slice(0, 31))
+    mainHolds(full().slice(0, 31))
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-add-btn'))
@@ -748,7 +800,7 @@ describe('a write that cannot succeed', () => {
 
 describe('a write reply that arrives after the dialog moved on', () => {
   const OTHER = 'the-other-server'
-  const held = (n: number): ((answer: true | undefined) => void) => {
+  const held = (n: number): ((answer: ServerFaultWrite | undefined) => void) => {
     const release = heldWrites[n]
     if (!release) throw new Error(`no write ${n} is held`)
     return release
@@ -757,7 +809,7 @@ describe('a write reply that arrives after the dialog moved on', () => {
   /** Starts a write on `UUID` that stays unanswered. */
   const startSave = async (): Promise<void> => {
     holdWrites = true
-    answerNow = statusOf([BUSY])
+    mainHolds([BUSY])
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-add-btn'))
@@ -792,11 +844,11 @@ describe('a write reply that arrives after the dialog moved on', () => {
     ['switched to another server without closing', OTHER, false]
   ])('does not close the form of a dialog %s, when the save is taken', async (_n, uuid, close) => {
     await startSave()
-    answerNow = statusOf([])
+    mainHolds([])
     await openFormElsewhere(uuid, close)
 
     await act(async () => {
-      held(0)(true)
+      held(0)(TAKEN)
     })
 
     expect(form()).toEqual({ editing: 'new', code: '2', error: undefined, uuid })
@@ -808,7 +860,7 @@ describe('a write reply that arrives after the dialog moved on', () => {
     ['switched to another server without closing', OTHER, false]
   ])('does not show its refusal in a dialog %s', async (_n, uuid, close) => {
     await startSave()
-    answerNow = statusOf([])
+    mainHolds([])
     await openFormElsewhere(uuid, close)
 
     await act(async () => {
@@ -820,7 +872,7 @@ describe('a write reply that arrives after the dialog moved on', () => {
 
   it('does not show the refusal of a delete in a dialog opened since', async () => {
     holdWrites = true
-    answerNow = statusOf([BUSY, SILENT])
+    mainHolds([BUSY, SILENT])
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-rule-0-delete'))
@@ -836,7 +888,7 @@ describe('a write reply that arrives after the dialog moved on', () => {
 
   it('does not show the refusal of a move in a dialog opened since', async () => {
     holdWrites = true
-    answerNow = statusOf([BUSY, SILENT])
+    mainHolds([BUSY, SILENT])
     await openDialog()
     await act(async () => {
       dom.click(screen.getByTestId('server-faults-rule-0-down'))
@@ -848,6 +900,36 @@ describe('a write reply that arrives after the dialog moved on', () => {
     })
 
     expect(form().error).toBeUndefined()
+  })
+
+  it('lets a dialog opened since write while the earlier write is still out', async () => {
+    await startSave()
+    await openFormElsewhere(UUID, true)
+
+    expect(screen.getByTestId('fault-form-save-btn')).toBeEnabled()
+  })
+
+  it('keeps a dialog opened since from writing twice when the earlier write answers first', async () => {
+    holdWrites = true
+    mainHolds([BUSY, SILENT])
+    await openDialog()
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+    await act(async () => {
+      useServerFaultsDialogZustand.getState().close()
+      useServerFaultsDialogZustand.getState().show(UUID)
+    })
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+
+    await act(async () => {
+      held(0)(undefined)
+    })
+
+    expect(screen.getByTestId('server-faults-rule-1-delete')).toBeDisabled()
+    expect(heldWrites).toHaveLength(2)
   })
 
   it('still closes the form and shows a refusal when nothing moved on', async () => {
@@ -863,8 +945,196 @@ describe('a write reply that arrives after the dialog moved on', () => {
       dom.click(screen.getByTestId('fault-form-save-btn'))
     })
     await act(async () => {
-      held(1)(true)
+      held(1)(TAKEN)
     })
     expect(form().editing).toBeUndefined()
+  })
+})
+
+// Every write replaces main's whole list with one built from `status`, so a
+// write built from a list main no longer holds brings back what was deleted
+// or drops what was added. Main refuses a stale version, and the dialog does
+// not offer a write until it holds the list main confirmed last.
+describe('a write built from a list main no longer holds', () => {
+  const NEW_RULE = { action: { kind: 'exception', code: 6 } } as const
+  const deleteButtons = (): HTMLElement[] => screen.getAllByTestId(/^server-faults-rule-\d-delete$/)
+
+  const addDraft = async (): Promise<void> => {
+    await act(async () => {
+      useServerFaultsDialogZustand.getState().edit('new')
+    })
+    type('fault-form-code', '6')
+  }
+
+  const clickSave = async (): Promise<void> => {
+    await act(async () => {
+      dom.click(screen.getByTestId('fault-form-save-btn'))
+    })
+  }
+
+  it('does not delete again from the list the first delete replaced while the refresh is out', async () => {
+    mainHolds([BUSY, SILENT])
+    await openDialog()
+    holdStatus = true
+
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+    for (const button of deleteButtons()) expect(button).toBeDisabled()
+    for (const button of deleteButtons()) {
+      await act(async () => {
+        dom.click(button)
+      })
+    }
+    await act(async () => {
+      await useServerFaultsDialogZustand.getState().remove(0)
+    })
+    expect(sets()).toEqual([{ uuid: UUID, rules: [SILENT] }])
+
+    await answerStatus(0, main)
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+
+    expect(sets()).toEqual([
+      { uuid: UUID, rules: [SILENT] },
+      { uuid: UUID, rules: [] }
+    ])
+    expect(main.rules).toEqual([])
+  })
+
+  it('offers no write until the first status arrives, and then adds to the list main holds', async () => {
+    main = statusOf([BUSY, SILENT])
+    await openDialog()
+
+    expect(screen.getByTestId('server-faults-add-btn')).toBeDisabled()
+    await addDraft()
+    expect(screen.getByTestId('fault-form-save-btn')).toBeDisabled()
+    await clickSave()
+    await act(async () => {
+      await useServerFaultsDialogZustand.getState().save()
+    })
+    expect(sets()).toEqual([])
+
+    await answerStatus(0, main)
+    await clickSave()
+
+    expect(sets()).toEqual([{ uuid: UUID, rules: [BUSY, SILENT, NEW_RULE] }])
+    expect(main.rules.map(ruleOfStatus)).toEqual([BUSY, SILENT, NEW_RULE])
+  })
+
+  it.each([
+    ['an MCP change', [SILENT, BUSY]],
+    ['an expiry', [SILENT]]
+  ])(
+    'does not save over %s while its refresh is out, and saves onto it after',
+    async (_name, changed: ServerFaultRule[]) => {
+      mainHolds([BUSY, SILENT])
+      await openDialog()
+      await addDraft()
+      holdStatus = true
+      main = statusOf(changed)
+      await act(async () => {
+        announce(main)
+      })
+
+      expect(screen.getByTestId('fault-form-save-btn')).toBeDisabled()
+      await act(async () => {
+        await useServerFaultsDialogZustand.getState().save()
+      })
+      expect(sets()).toEqual([])
+
+      await answerStatus(0, main)
+      await clickSave()
+
+      expect(sets()).toEqual([{ uuid: UUID, rules: [...changed, NEW_RULE] }])
+      expect(screen.queryByTestId('fault-form-code')).not.toBeInTheDocument()
+    }
+  )
+
+  it('sends the version of the list it was built from', async () => {
+    mainHolds([BUSY, SILENT])
+    await openDialog()
+    const read = main.version
+
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-1-delete'))
+    })
+
+    expect(sent()).toEqual([{ uuid: UUID, version: read, rules: [BUSY] }])
+  })
+
+  it('keeps the form and the draft when main refuses a stale version, says so, and saves onto the list it answered', async () => {
+    mainHolds([BUSY])
+    await openDialog()
+    await addDraft()
+    // Main changed the list and its server_faults has not arrived yet.
+    main = statusOf([SLOW])
+
+    await clickSave()
+
+    expect(main.rules.map(({ action }) => action.kind)).toEqual(['delay'])
+    expect(screen.getByTestId('fault-form-code')).toHaveValue('6')
+    expect(screen.getByTestId('server-faults-error')).toHaveTextContent(
+      'The rules changed before this write reached main, so nothing was written.'
+    )
+    expect(useServerFaultsDialogZustand.getState().status).toEqual(main.rules)
+
+    await clickSave()
+
+    expect(sets()).toEqual([
+      { uuid: UUID, rules: [BUSY, NEW_RULE] },
+      { uuid: UUID, rules: [SLOW, NEW_RULE] }
+    ])
+    expect(screen.queryByTestId('server-faults-error')).not.toBeInTheDocument()
+  })
+
+  it('shows the list main answered when it refuses a stale delete', async () => {
+    mainHolds([BUSY, SILENT])
+    await openDialog()
+    main = statusOf([SLOW])
+
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+
+    expect(screen.getByTestId('server-faults-rule-0-summary')).toHaveTextContent('reads')
+    expect(screen.queryByTestId('server-faults-rule-1')).not.toBeInTheDocument()
+    expect(screen.getByTestId('server-faults-error')).toHaveTextContent('The rules changed')
+    expect(main.rules.map(({ action }) => action.kind)).toEqual(['delay'])
+  })
+
+  it('runs one write at a time, and builds the next from the list the first confirmed', async () => {
+    mainHolds([BUSY, SILENT, SLOW])
+    await openDialog()
+    holdWrites = true
+
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+    for (const button of deleteButtons()) expect(button).toBeDisabled()
+    expect(screen.getByTestId('server-faults-rule-1-up')).toBeDisabled()
+    await act(async () => {
+      await useServerFaultsDialogZustand.getState().move(2, -1)
+    })
+    expect(heldWrites).toHaveLength(1)
+
+    const first = sent()[0]
+    if (!first) throw new Error('the first delete was not sent')
+    const release = heldWrites[0]
+    if (!release) throw new Error('the first delete is not held')
+    await act(async () => {
+      release(mainWrites(first))
+    })
+    holdWrites = false
+    await act(async () => {
+      dom.click(screen.getByTestId('server-faults-rule-0-delete'))
+    })
+
+    expect(sets()).toEqual([
+      { uuid: UUID, rules: [SILENT, SLOW] },
+      { uuid: UUID, rules: [SLOW] }
+    ])
+    expect(main.rules.map(({ action }) => action.kind)).toEqual(['delay'])
   })
 })

@@ -8,7 +8,7 @@ import Typography from '@mui/material/Typography'
 import { meme } from '@renderer/components/shared/inputs/meme'
 import { useCallback } from 'react'
 import { describeFaultRule, ruleOfStatus, secondsLeft } from './faultRule'
-import { useServerFaultsDialogZustand } from './serverFaultsDialog.zustand'
+import { useServerFaultsDialogZustand, writeBlocked } from './serverFaultsDialog.zustand'
 
 interface FaultRuleRowProps {
   /** The place in the list, which is the rule's priority. */
@@ -20,6 +20,7 @@ const FaultRuleRow = meme(({ index }: FaultRuleRowProps) => {
   const status = useServerFaultsDialogZustand((z) => z.status[index])
   const isLast = useServerFaultsDialogZustand((z) => index === z.status.length - 1)
   const fetchedAt = useServerFaultsDialogZustand((z) => z.fetchedAt)
+  const blocked = useServerFaultsDialogZustand(writeBlocked)
 
   const moveUp = useCallback((): void => {
     void useServerFaultsDialogZustand.getState().move(index, -1)
@@ -67,7 +68,7 @@ const FaultRuleRow = meme(({ index }: FaultRuleRowProps) => {
         data-testid={`${testId}-up`}
         aria-label="Move up"
         size="small"
-        disabled={index === 0}
+        disabled={blocked || index === 0}
         onClick={moveUp}
       >
         <ArrowUpward fontSize="small" />
@@ -76,7 +77,7 @@ const FaultRuleRow = meme(({ index }: FaultRuleRowProps) => {
         data-testid={`${testId}-down`}
         aria-label="Move down"
         size="small"
-        disabled={isLast}
+        disabled={blocked || isLast}
         onClick={moveDown}
       >
         <ArrowDownward fontSize="small" />
@@ -88,6 +89,7 @@ const FaultRuleRow = meme(({ index }: FaultRuleRowProps) => {
         data-testid={`${testId}-delete`}
         aria-label="Delete"
         size="small"
+        disabled={blocked}
         onClick={remove}
       >
         <Delete fontSize="small" />

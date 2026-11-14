@@ -51,9 +51,14 @@ export type ServerFaultRule = z.infer<typeof ServerFaultRuleSchema>
 /** How many rules one server takes. A list is read in order, so a long one is a mistake. */
 export const MAX_FAULT_RULES = 32
 
-/** `set_server_faults`: the whole list one server holds from now on. */
+/**
+ * `set_server_faults`: the whole list one server holds from now on, and the
+ * version of the list it was built from. Main takes it only while its list is
+ * still at that version.
+ */
 export const SetServerFaultsParamsSchema = z.object({
   uuid: ServerUuidSchema,
+  version: z.number().int().nonnegative(),
   rules: z.array(ServerFaultRuleSchema).max(MAX_FAULT_RULES)
 })
 export type SetServerFaultsParams = z.infer<typeof SetServerFaultsParamsSchema>
@@ -68,8 +73,25 @@ export type ServerFaultRuleStatus = ServerFaultRule & {
   expiresAt?: number
 }
 
+/** One server's rules with what each has done, as `get_server_fault_status` answers. */
+export interface ServerFaultStatus {
+  /** The version of this list, which `set_server_faults` sends back. */
+  version: number
+  rules: ServerFaultRuleStatus[]
+}
+
+/** What `set_server_faults` answers for a payload it accepted. */
+export interface ServerFaultWrite {
+  /** False when the list had changed since the version sent, and nothing was written. */
+  taken: boolean
+  /** The list main holds after the write, taken or not. */
+  status: ServerFaultStatus
+}
+
 /** The rules one server holds now, as `server_faults` carries them on every change. */
 export interface ServerFaults {
   uuid: string
+  /** The version of this list. */
+  version: number
   rules: ServerFaultRule[]
 }

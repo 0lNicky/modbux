@@ -13,7 +13,9 @@ import {
   UnitIdString,
   MAIN_SERVER_UUID,
   ServerFaultRule,
-  ServerFaultRuleStatus
+  ServerFaultRuleStatus,
+  ServerFaultStatus,
+  ServerFaultWrite
 } from '@shared'
 import { Windows } from '../windows'
 import { ServerFaults } from './modbusServer/faults'
@@ -76,7 +78,8 @@ export class ModbusServer {
     // Every window is told, because both draw the server view and a split out
     // window can close while the rules stay.
     this._faults = new ServerFaults({
-      onChange: (uuid, rules): void => windows.send('server_faults', { uuid, rules })
+      onChange: (uuid, rules, version): void =>
+        windows.send('server_faults', { uuid, version, rules })
     })
     const stores = { registry: this._registry, requestLog: this._requestLog, faults: this._faults }
     this._rtu = new RtuServer({ windows, ...stores })
@@ -113,6 +116,22 @@ export class ModbusServer {
   /** Replaces `uuid`'s fault rules, and answers the list now in effect. */
   public setFaults = (uuid: string, rules: ServerFaultRule[]): ServerFaultRule[] =>
     this._faults.set(uuid, rules)
+
+  /**
+   * Replaces `uuid`'s fault rules only while the list is still at `version`, and
+   * answers whether it did with the list now in effect.
+   */
+  public replaceFaults = (
+    uuid: string,
+    version: number,
+    rules: ServerFaultRule[]
+  ): ServerFaultWrite => {
+    const taken = this._faults.replace(uuid, version, rules)
+    return { taken, status: this._faults.snapshot(uuid) }
+  }
+
+  /** `uuid`'s fault rules with their counts, and the version of that list. */
+  public getFaultStatus = (uuid: string): ServerFaultStatus => this._faults.snapshot(uuid)
 
   /** `uuid`'s fault rules, each with how often it matched and fired. */
   public getFaults = (uuid: string): ServerFaultRuleStatus[] => this._faults.status(uuid)
@@ -162,7 +181,7 @@ export class ModbusServer {
 
     this._registry.deleteUuid(uuid)
     this._requestLog.delete(uuid)
-    this._faults.clear(uuid)
+    this._faults.forget(uuid)
 
     await this._tcp.closeAndForget(uuid)
   }

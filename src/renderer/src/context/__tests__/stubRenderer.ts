@@ -5,7 +5,9 @@ import {
   ConnectionConfigSchema,
   RegisterConfigSchema,
   RegisterMappingSchema,
-  SetServerFaultsParamsSchema
+  SetServerFaultsParamsSchema,
+  type ServerFaultStatus,
+  type ServerFaultWrite
 } from '@shared'
 
 /**
@@ -37,7 +39,22 @@ const answers: Record<string, (payload: unknown) => Promise<unknown>> = {
   updateConnectionConfig: answerConfig(ConnectionConfigSchema.deepPartial()),
   updateRegisterConfig: answerConfig(RegisterConfigSchema.deepPartial()),
   setRegisterMapping: answerConfig(RegisterMappingSchema),
-  setServerFaults: answerConfig(SetServerFaultsParamsSchema),
+  // Main at version 0 with no rules: a write at that version is taken, and the
+  // list it answers carries the next version.
+  setServerFaults: (payload: unknown): Promise<ServerFaultWrite | undefined> => {
+    const parsed = SetServerFaultsParamsSchema.safeParse(payload)
+    if (!parsed.success) return Promise.resolve(undefined)
+    const { version, rules } = parsed.data
+    const status = (now: number, held: typeof rules): ServerFaultStatus => ({
+      version: now,
+      rules: held.map((rule) => ({ ...rule, matched: 0, triggered: 0 }))
+    })
+    return Promise.resolve(
+      version === 0
+        ? { taken: true, status: status(1, rules) }
+        : { taken: false, status: status(0, []) }
+    )
+  },
   // The words main answers with, which for a payload it refuses is nothing at
   // all rather than an empty list.
   addReplaceServerRegister: (payload: unknown): Promise<number[] | undefined> =>
@@ -46,7 +63,8 @@ const answers: Record<string, (payload: unknown) => Promise<unknown>> = {
   getAppVersion: () => Promise.resolve('0.0.0-test'),
   getRtuServerStatus: () => Promise.resolve(false),
   getServerFaults: () => Promise.resolve({}),
-  getServerFaultStatus: () => Promise.resolve([]),
+  getServerFaultStatus: (): Promise<ServerFaultStatus> =>
+    Promise.resolve({ version: 0, rules: [] }),
   listSerialPorts: () => Promise.resolve([])
 }
 
