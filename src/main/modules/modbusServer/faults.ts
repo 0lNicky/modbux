@@ -1,4 +1,10 @@
-import { RegisterType, ServerFaultAction, ServerFaultRule, ServerFaultRuleStatus } from '@shared'
+import {
+  RegisterType,
+  ServerFaultAction,
+  ServerFaultRule,
+  ServerFaultRuleStatus,
+  ServerFaultStatus
+} from '@shared'
 
 /** A request as a fault rule reads it: whole, before anything is read or written. */
 export interface FaultRequest {
@@ -24,8 +30,8 @@ interface RuleEntry {
 }
 
 interface ServerFaultsParams {
-  /** Called with a server's whole list each time it changes, emptied included. */
-  onChange: (uuid: string, rules: ServerFaultRule[]) => void
+  /** Called with a server's whole list and its new version each time it changes, emptied included. */
+  onChange: (uuid: string, rules: ServerFaultRule[], version: number) => void
 }
 
 const matches = (rule: ServerFaultRule, request: FaultRequest): boolean => {
@@ -52,9 +58,32 @@ export class ServerFaults {
   private _entries: Map<string, RuleEntry[]> = new Map()
   /** The `forSeconds` timers of each server's list, cancelled when the list goes. */
   private _timers: Map<string, ReturnType<typeof setTimeout>[]> = new Map()
+  /**
+   * Each server's list version. One counter serves every server and only
+   * grows, so a uuid never answers a version it answered before, even after its
+   * list emptied or the server was deleted.
+   */
+  private _versions: Map<string, number> = new Map()
+  private _lastVersion = 0
 
   constructor({ onChange }: ServerFaultsParams) {
     this._onChange = onChange
+  }
+
+  /** The version of `uuid`'s list, which every change to the list replaces. 0 for one never changed. */
+  public version(uuid: string): number {
+    return this._versions.get(uuid) ?? 0
+  }
+
+  /**
+   * Replaces `uuid`'s list with `rules` only while it is still at `version`,
+   * and says whether it did. A window sends the version its list was read at,
+   * so a list main changed since is refused instead of written back over.
+   */
+  public replace(uuid: string, version: number, rules: ServerFaultRule[]): boolean {
+    if (version !== this.version(uuid)) return false
+    this.set(uuid, rules)
+    return true
   }
 
   /** Replaces `uuid`'s list with `rules`, counts reset, and answers it. */
@@ -79,7 +108,7 @@ export class ServerFaults {
     )
     if (timers.length > 0) this._timers.set(uuid, timers)
 
-    this._onChange(uuid, rules)
+    this._onChange(uuid, rules, this._nextVersion(uuid))
     return rules
   }
 
@@ -98,6 +127,11 @@ export class ServerFaults {
     }))
   }
 
+  /** The rules `uuid` holds now with what each has done, and the version of that list. */
+  public snapshot(uuid: string): ServerFaultStatus {
+    return { version: this.version(uuid), rules: this.status(uuid) }
+  }
+
   /** Every server that holds rules, with its list. */
   public all(): Record<string, ServerFaultRule[]> {
     return Object.fromEntries(
@@ -109,6 +143,16 @@ export class ServerFaults {
   public clear(uuid: string): void {
     if (!this._entries.has(uuid)) return
     this.set(uuid, [])
+  }
+
+  /**
+   * Empties a deleted server's list. The version changes even when it held no
+   * rules, so a window still holding the deleted server's list cannot write to
+   * its uuid.
+   */
+  public forget(uuid: string): void {
+    if (this._entries.has(uuid)) this.set(uuid, [])
+    else this._nextVersion(uuid)
   }
 
   /**
@@ -139,7 +183,13 @@ export class ServerFaults {
     } else {
       this._entries.set(uuid, remaining)
     }
-    this._onChange(uuid, this.list(uuid))
+    this._onChange(uuid, this.list(uuid), this._nextVersion(uuid))
+  }
+
+  private _nextVersion(uuid: string): number {
+    this._lastVersion += 1
+    this._versions.set(uuid, this._lastVersion)
+    return this._lastVersion
   }
 
   private _cancelTimers(uuid: string): void {

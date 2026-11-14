@@ -9,7 +9,7 @@ import { MAX_FAULT_RULES } from '@shared'
 import { useCallback } from 'react'
 import FaultRuleForm from './FaultRuleForm'
 import FaultRuleRow from './FaultRuleRow'
-import { useServerFaultsDialogZustand } from './serverFaultsDialog.zustand'
+import { useServerFaultsDialogZustand, writeBlocked } from './serverFaultsDialog.zustand'
 
 //
 //
@@ -51,6 +51,7 @@ const RuleList = meme(() => {
 // Add, refresh, clear all
 const ListActions = meme(() => {
   const ruleCount = useServerFaultsDialogZustand((z) => z.status.length)
+  const blocked = useServerFaultsDialogZustand(writeBlocked)
 
   const add = useCallback((): void => {
     useServerFaultsDialogZustand.getState().edit('new')
@@ -70,7 +71,7 @@ const ListActions = meme(() => {
       <div>
         <Button
           data-testid="server-faults-add-btn"
-          disabled={ruleCount >= MAX_FAULT_RULES}
+          disabled={blocked || ruleCount >= MAX_FAULT_RULES}
           onClick={add}
         >
           Add rule

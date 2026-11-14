@@ -2362,12 +2362,14 @@ describe('ModbusServer', () => {
 
     it('tells every window the list on each change', () => {
       server.setFaults(uuid, [rule])
+      const afterSet = server.getFaultStatus(uuid).version
       server.clearFaults(uuid)
 
       expect(getWindowCalls('server_faults').map(([, payload]) => payload)).toEqual([
-        { uuid, rules: [rule] },
-        { uuid, rules: [] }
+        { uuid, version: afterSet, rules: [rule] },
+        { uuid, version: server.getFaultStatus(uuid).version, rules: [] }
       ])
+      expect(afterSet).not.toBe(server.getFaultStatus(uuid).version)
       expect(getAddressees('server_faults')).toEqual([undefined, undefined])
     })
 
@@ -2381,8 +2383,34 @@ describe('ModbusServer', () => {
       expect(server.getFaults(uuid)).toEqual([])
       expect(server.allFaults()).toEqual({})
       expect(getWindowCalls('server_faults').map(([, payload]) => payload)).toEqual([
-        { uuid, rules: [] }
+        { uuid, version: server.getFaultStatus(uuid).version, rules: [] }
       ])
+    })
+
+    it('refuses a window’s write built before the server was deleted, though it held no rules', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      const read = server.getFaultStatus(uuid).version
+
+      await server.deleteServer(uuid)
+
+      expect(server.replaceFaults(uuid, read, [rule])).toEqual({
+        taken: false,
+        status: { version: server.getFaultStatus(uuid).version, rules: [] }
+      })
+      expect(server.allFaults()).toEqual({})
+    })
+
+    it('takes a window’s write at the version it read, refuses it once MCP changed the list, and answers the list either way', () => {
+      const read = server.getFaultStatus(uuid).version
+      server.setFaults(uuid, [rule])
+      const afterMcp = server.getFaultStatus(uuid)
+
+      expect(server.replaceFaults(uuid, read, [])).toEqual({ taken: false, status: afterMcp })
+      expect(server.getFaults(uuid)).toEqual(afterMcp.rules)
+
+      const taken = server.replaceFaults(uuid, afterMcp.version, [])
+      expect(taken).toEqual({ taken: true, status: server.getFaultStatus(uuid) })
+      expect(server.getFaults(uuid)).toEqual([])
     })
 
     it('keeps another server’s rules when one is deleted', async () => {

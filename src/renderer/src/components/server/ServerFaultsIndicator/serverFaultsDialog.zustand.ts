@@ -5,7 +5,8 @@ import {
   MAX_FAULT_RULES,
   SetServerFaultsParamsSchema,
   type ServerFaultRule,
-  type ServerFaultRuleStatus
+  type ServerFaultRuleStatus,
+  type ServerFaultStatus
 } from '@shared'
 import { onEvent } from '@renderer/events'
 import {
@@ -25,8 +26,17 @@ interface ServerFaultsDialogZustand {
   open: boolean
   /** The server the dialog was opened for, which stays put while it is open. */
   uuid: string
-  /** What `get_server_fault_status` last answered for `uuid`, in order. */
+  /** The newest list main answered for `uuid`, in order. */
   status: ServerFaultRuleStatus[]
+  /** The version of `status`, which a write sends back. */
+  version: number
+  /**
+   * A status request is out, so `status` may be older than main's list. `show`
+   * sends one, so this is true until the first answer arrives.
+   */
+  loading: boolean
+  /** A write is out, and the list it leaves is not known yet. */
+  writing: boolean
   /** When `status` arrived, which `expiresAt` is measured against. */
   fetchedAt: number
   /** Undefined while the list is shown. */
@@ -71,6 +81,21 @@ let latestRequest = 0
  */
 let generation = 0
 
+/** The newest write. A reply clears `writing` only while it is still the newest. */
+let latestWrite = 0
+
+/**
+ * Whether a write would be built from a list main may no longer hold: while a
+ * status request is out, the first one included, or while another write is.
+ * `replaceWith` sends nothing then, and the buttons that write are disabled.
+ */
+export const writeBlocked = (z: { loading: boolean; writing: boolean }): boolean =>
+  z.loading || z.writing
+
+/** The message a write main refused as stale leaves on screen. */
+const STALE_WRITE =
+  'The rules changed before this write reached main, so nothing was written. The list shows the rules main holds now.'
+
 export const useServerFaultsDialogZustand = create<
   ServerFaultsDialogZustand,
   [['zustand/mutative', never]]
@@ -79,14 +104,31 @@ export const useServerFaultsDialogZustand = create<
     /** The list main holds as `status` last said it, which every write sends back whole. */
     const currentRules = () => get().status.map(ruleOfStatus)
 
+    /** Puts the list main answered on screen, with the version a write sends back. */
+    const showStatus = (answer: ServerFaultStatus) => {
+      set((state) => {
+        state.status = answer.rules
+        state.version = answer.version
+        state.fetchedAt = Date.now()
+        state.gone =
+          state.editing === 'existing' &&
+          editedAt(answer.rules, state.target, state.targetIndex) === -1
+      })
+    }
+
     /**
-     * Sends `rules` and says whether main took them. A list the schema refuses is
-     * not sent, and a reply that is not `true` is a refusal, so the reason is
-     * kept for the screen. `server_faults` follows a taken write and asks for
-     * the status again.
+     * Sends `rules`, built from `status`, with the version of `status`, and says
+     * whether main took them.
+     *
+     * Nothing is sent while `writeBlocked` holds, because `status` may then be
+     * older than main's list. A list the schema refuses is not sent, and a
+     * refusal keeps its reason for the screen. Main answers the list it holds
+     * after the write, taken or not, and that list is shown.
      */
     const replaceWith = async (rules: ServerFaultRule[]): Promise<boolean> => {
-      const params = { uuid: get().uuid, rules }
+      const { uuid, version } = get()
+      if (writeBlocked(get())) return false
+      const params = { uuid, version, rules }
       const startedIn = generation
       const refusal = (message: string): false => {
         if (startedIn === generation) {
@@ -101,12 +143,24 @@ export const useServerFaultsDialogZustand = create<
       }
       const parsed = SetServerFaultsParamsSchema.safeParse(params)
       if (!parsed.success) return refusal(parsed.error.issues[0]?.message ?? 'Invalid rules')
-      if ((await window.api.setServerFaults(parsed.data)) !== true) {
-        return refusal('Main refused the rules, so nothing changed')
+
+      latestWrite += 1
+      const write = latestWrite
+      set((state) => {
+        state.writing = true
+      })
+      const answer = await window.api.setServerFaults(parsed.data)
+      if (write === latestWrite) {
+        set((state) => {
+          state.writing = false
+        })
       }
       // A taken write is taken wherever the screen is now, but only its own
       // dialog hears about it.
       if (startedIn !== generation) return false
+      if (answer === undefined) return refusal('Main refused the rules, so nothing changed')
+      showStatus(answer.status)
+      if (!answer.taken) return refusal(STALE_WRITE)
       set((state) => {
         state.error = undefined
       })
@@ -124,6 +178,9 @@ export const useServerFaultsDialogZustand = create<
       open: false,
       uuid: '',
       status: [],
+      version: 0,
+      loading: false,
+      writing: false,
       fetchedAt: 0,
       editing: undefined,
       target: undefined,
@@ -137,6 +194,8 @@ export const useServerFaultsDialogZustand = create<
           state.open = true
           state.uuid = uuid
           state.status = []
+          state.version = 0
+          state.writing = false
           state.editing = undefined
           state.error = undefined
         })
@@ -153,14 +212,15 @@ export const useServerFaultsDialogZustand = create<
       refresh: async () => {
         latestRequest += 1
         const request = latestRequest
-        const status = await window.api.getServerFaultStatus(get().uuid)
+        set((state) => {
+          state.loading = true
+        })
+        const answer = await window.api.getServerFaultStatus(get().uuid)
         if (request !== latestRequest) return
         set((state) => {
-          state.status = status
-          state.fetchedAt = Date.now()
-          state.gone =
-            state.editing === 'existing' && editedAt(status, state.target, state.targetIndex) === -1
+          state.loading = false
         })
+        showStatus(answer)
       },
       edit: (index) => {
         generation += 1

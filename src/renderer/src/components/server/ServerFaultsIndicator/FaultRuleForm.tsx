@@ -14,7 +14,7 @@ import { meme } from '@renderer/components/shared/inputs/meme'
 import { FAULT_DELAY_MAX_MS, FAULT_FOR_SECONDS_MAX, RegisterTypeSchema } from '@shared'
 import { useCallback, useMemo } from 'react'
 import { ruleFromDraft, type FaultRuleDraft, type FaultRuleField } from './faultRule'
-import { useServerFaultsDialogZustand } from './serverFaultsDialog.zustand'
+import { useServerFaultsDialogZustand, writeBlocked } from './serverFaultsDialog.zustand'
 
 /** The errors of the draft in the store, by field. One place, so every field reads the same ones. */
 const useErrors = (): ReturnType<typeof ruleFromDraft> => {
@@ -205,6 +205,7 @@ const ActionDetail = meme(() => {
 // Save, cancel
 const FormActions = meme(() => {
   const { rule } = useErrors()
+  const blocked = useServerFaultsDialogZustand(writeBlocked)
 
   const save = useCallback((): void => {
     void useServerFaultsDialogZustand.getState().save()
@@ -218,7 +219,12 @@ const FormActions = meme(() => {
       <Button data-testid="fault-form-cancel-btn" onClick={cancel}>
         Cancel
       </Button>
-      <Button data-testid="fault-form-save-btn" variant="contained" disabled={!rule} onClick={save}>
+      <Button
+        data-testid="fault-form-save-btn"
+        variant="contained"
+        disabled={!rule || blocked}
+        onClick={save}
+      >
         Save
       </Button>
     </DialogActions>

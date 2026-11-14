@@ -325,13 +325,10 @@ export const initIpc: InitIpcFn = (app, state, client, server, windows, mcp) => 
   ipcHandle('clear_server_faults', (_, uuid) => server.clearFaults(uuid), ServerUuidSchema)
   ipcHandle(
     'set_server_faults',
-    (_, { uuid, rules }) => {
-      server.setFaults(uuid, rules)
-      return true
-    },
+    (_, { uuid, version, rules }) => server.replaceFaults(uuid, version, rules),
     SetServerFaultsParamsSchema
   )
-  ipcHandle('get_server_fault_status', (_, uuid) => server.getFaults(uuid))
+  ipcHandle('get_server_fault_status', (_, uuid) => server.getFaultStatus(uuid))
 
   // Serial port discovery
   ipcHandle('list_serial_ports', () => client.listSerialPorts())

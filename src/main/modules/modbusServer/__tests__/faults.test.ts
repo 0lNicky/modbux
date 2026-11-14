@@ -18,12 +18,20 @@ const NO_RESPONSE = { kind: 'no_response' } as const
 const exception = (code: number) => ({ kind: 'exception' as const, code })
 
 let changes: [string, ServerFaultRule[]][]
+/** The version each change carried, in the order `changes` holds them. */
+let changedVersions: number[]
 let faults: ServerFaults
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   changes = []
-  faults = new ServerFaults({ onChange: (changed, rules) => changes.push([changed, rules]) })
+  changedVersions = []
+  faults = new ServerFaults({
+    onChange: (changed, rules, version) => {
+      changes.push([changed, rules])
+      changedVersions.push(version)
+    }
+  })
 })
 
 afterEach(() => {
@@ -222,5 +230,124 @@ describe('the status', () => {
         expiresAt: now + 10_000
       }
     ])
+  })
+})
+
+// A window writes back a list it read, and the version is how main tells
+// whether that list is still the one it holds.
+describe('the version of a list', () => {
+  const ONE: ServerFaultRule[] = [{ unitId: 1, action: NO_RESPONSE }]
+  const TWO: ServerFaultRule[] = [{ unitId: 2, action: exception(6) }]
+
+  it('changes on every set, including an MCP set of the same list, and the change carries it', () => {
+    const before = faults.version(uuid)
+    faults.set(uuid, ONE)
+    const afterFirst = faults.version(uuid)
+    faults.set(uuid, ONE)
+
+    expect(afterFirst).not.toBe(before)
+    expect(faults.version(uuid)).not.toBe(afterFirst)
+    expect(changedVersions).toEqual([afterFirst, faults.version(uuid)])
+  })
+
+  it('changes on a clear and on an expiry', () => {
+    faults.set(uuid, [{ forSeconds: 1, action: NO_RESPONSE }, ...TWO])
+    const set = faults.version(uuid)
+    vi.advanceTimersByTime(1000)
+    const expired = faults.version(uuid)
+    faults.clear(uuid)
+
+    expect(expired).not.toBe(set)
+    expect(faults.version(uuid)).not.toBe(expired)
+    expect(changedVersions).toEqual([set, expired, faults.version(uuid)])
+  })
+
+  it('changes when the server is forgotten, even with no rules, and says so only when it had some', () => {
+    const empty = faults.version(uuid)
+    faults.forget(uuid)
+    const forgottenEmpty = faults.version(uuid)
+    faults.set(uuid, ONE)
+    const said = changes.length
+    faults.forget(uuid)
+
+    expect(forgottenEmpty).not.toBe(empty)
+    expect(changes).toHaveLength(said + 1)
+    expect(changes.at(-1)).toEqual([uuid, []])
+    expect(changedVersions.at(-1)).toBe(faults.version(uuid))
+  })
+
+  it('does not change when a request is decided, or for another server', () => {
+    faults.set(uuid, ONE)
+    const version = faults.version(uuid)
+
+    faults.decide(uuid, read({ unitId: 1 }))
+    faults.set('another-server', TWO)
+    faults.clear('a-server-with-no-rules')
+
+    expect(faults.version(uuid)).toBe(version)
+  })
+
+  it('never answers a version a list already had, even after it emptied', () => {
+    faults.set(uuid, ONE)
+    const first = faults.version(uuid)
+    faults.clear(uuid)
+    faults.set(uuid, ONE)
+
+    expect(faults.version(uuid)).not.toBe(first)
+  })
+
+  it('answers the status with the version it belongs to', () => {
+    faults.set(uuid, ONE)
+
+    expect(faults.snapshot(uuid)).toEqual({
+      version: faults.version(uuid),
+      rules: [{ ...ONE[0], matched: 0, triggered: 0 }]
+    })
+  })
+
+  it('replaces the list for the version it holds, and says so with the new one', () => {
+    faults.set(uuid, ONE)
+    const read = faults.version(uuid)
+
+    expect(faults.replace(uuid, read, TWO)).toBe(true)
+    expect(faults.list(uuid)).toEqual(TWO)
+    expect(faults.version(uuid)).not.toBe(read)
+    expect(changes.at(-1)).toEqual([uuid, TWO])
+  })
+
+  it('refuses a version it no longer holds, and changes nothing', () => {
+    faults.set(uuid, ONE)
+    const read = faults.version(uuid)
+    faults.set(uuid, TWO)
+    const now = faults.version(uuid)
+    const said = changes.length
+
+    expect(faults.replace(uuid, read, ONE)).toBe(false)
+    expect(faults.list(uuid)).toEqual(TWO)
+    expect(faults.version(uuid)).toBe(now)
+    expect(changes).toHaveLength(said)
+  })
+
+  it('refuses the version a list had before it expired', () => {
+    faults.set(uuid, [{ forSeconds: 1, action: NO_RESPONSE }, ...TWO])
+    const read = faults.version(uuid)
+    vi.advanceTimersByTime(1000)
+
+    expect(faults.replace(uuid, read, [])).toBe(false)
+    expect(faults.list(uuid)).toEqual(TWO)
+  })
+
+  it('takes the first of two windows that read the same list, and refuses the second', () => {
+    faults.set(uuid, ONE)
+    const bothRead = faults.version(uuid)
+
+    expect(faults.replace(uuid, bothRead, [...ONE, ...TWO])).toBe(true)
+    expect(faults.replace(uuid, bothRead, [])).toBe(false)
+    expect(faults.list(uuid)).toEqual([...ONE, ...TWO])
+  })
+
+  it('takes a write to a server that never held rules at the version it answered', () => {
+    expect(faults.replace(uuid, faults.version(uuid), ONE)).toBe(true)
+    expect(faults.list(uuid)).toEqual(ONE)
   })
 })

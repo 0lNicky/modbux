@@ -115,3 +115,4 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 - 規則只存在 main 的記憶體：重開 app、刪除 Server、對該 Server 載入設定檔或 project 檔時清空。
 - 規則也能在 Server 畫面上編輯（main window 與拆出來的 Server 視窗都是）：**Fault rules** 按鈕開對話框，每條規則一行，可上移、下移、編輯、刪除，底部有新增、重新整理與全部清除。按鈕在有規則時顯示條數。
 - 畫面上的每次修改都是整份取代，與 `server_set_faults` 相同，所以每條規則的 `matched`、`triggered` 歸零，每個 `forSeconds` 的計時重新開始。對話框的次數只在開啟、規則變動與按下重新整理時讀取。
+- 畫面的寫入只在 main 的清單仍是對話框讀到的那份時才生效。清單在這之間被 `server_set_faults`、另一個視窗或 `forSeconds` 到期改過，寫入就不生效，對話框保留表單並改顯示目前的清單。`server_set_faults` 本身不做這個檢查。

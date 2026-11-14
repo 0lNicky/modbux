@@ -301,6 +301,32 @@ test.describe.serial('fault rules editor', () => {
     await expect(mainPage.getByTestId('server-faults-indicator')).toHaveText('Fault rules')
   })
 
+  test('main refuses a window’s write built from the list MCP has since replaced', async ({
+    mainPage
+  }) => {
+    const uuid = String((await call('server_get_faults')).json.uuid)
+    const read = await mainPage.evaluate((id) => window.api.getServerFaultStatus(id), uuid)
+    const MCP_RULES = [{ unitId: 0, action: { kind: 'exception', code: 4 } }]
+    await call('server_set_faults', { rules: MCP_RULES })
+
+    const answer = await mainPage.evaluate(
+      ({ id, version }) => window.api.setServerFaults({ uuid: id, version, rules: [] }),
+      { id: uuid, version: read.version }
+    )
+
+    expect(answer?.taken).toBe(false)
+    expect(answer?.status.version).not.toBe(read.version)
+    expect(await heldRules()).toEqual(MCP_RULES)
+
+    // The version main answered is the one it takes.
+    const taken = await mainPage.evaluate(
+      ({ id, version }) => window.api.setServerFaults({ uuid: id, version, rules: [] }),
+      { id: uuid, version: answer?.status.version ?? -1 }
+    )
+    expect(taken?.taken).toBe(true)
+    expect(await heldRules()).toEqual([])
+  })
+
   test('a rule set over MCP shows in the dialog, and Refresh reads its counts', async ({
     mainPage
   }) => {
