@@ -1,4 +1,4 @@
-import { RawTransaction, Transaction } from '@shared'
+import { MAX_TRANSACTIONS, RawTransaction, Transaction } from '@shared'
 import { DateTime } from 'luxon'
 import ModbusRTU from 'modbus-serial'
 import { v4 } from 'uuid'
@@ -53,6 +53,38 @@ const requestedAddress = (rawTransaction: RawTransaction): number | undefined =>
   return rawTransaction.nextDataAddress
 }
 
+/**
+ * The exception code a response carries, and undefined for any other response.
+ *
+ * A response is an exception when its function code has the high bit set, and
+ * the byte after the function code is the exception code. The frame is unit id,
+ * function code, data, CRC on every protocol: modbus-serial's TCP port strips
+ * the MBAP header before it emits a response and adds one only on the way out
+ * (`tcpport.js`), so the function code is byte 1 on TCP as on RTU.
+ */
+export const exceptionCodeOf = (responses: readonly string[]): number | undefined => {
+  for (const response of responses) {
+    const bytes = Buffer.from(response.replace(/ /g, ''), 'hex')
+    const [, functionCode, exceptionCode] = bytes
+    if (functionCode !== undefined && functionCode >= 0x80) return exceptionCode
+  }
+  return undefined
+}
+
+/** A transaction as main keeps it: what the window gets, and what main read off the frame. */
+export type LoggedTransaction = Transaction & { exceptionCode?: number }
+
+export interface TransactionQuery {
+  /** The newest `limit` that match. Without it, all of them. */
+  limit?: number
+  /** Only transactions logged at or after this time. */
+  sinceTimestamp?: number
+  /** Only a timeout, an error message or an exception. */
+  failedOnly?: boolean
+  /** Only transactions logged after `mark()` answered this. */
+  afterMark?: number
+}
+
 interface TransactionLogParams {
   /**
    * The client as it is now, not as it was.
@@ -75,6 +107,13 @@ export class TransactionLog {
   private _client: () => ModbusRTU
   private _windows: Windows
 
+  /** Oldest first, at most `MAX_TRANSACTIONS`. */
+  private _recent: LoggedTransaction[] = []
+  /** Every transaction ever logged, so a mark survives the cap dropping the oldest. */
+  private _logged = 0
+  /** When each key was handed out, which is when its request goes out. */
+  private _startedAt = new Map<string, number>()
+
   constructor({ client, windows }: TransactionLogParams) {
     this._client = client
     this._windows = windows
@@ -96,7 +135,42 @@ export class TransactionLog {
    * request that goes next. Read it immediately before the call: nothing awaits
    * in between, so nothing else can file first.
    */
-  public nextTransactionIdKey = (): string => String(this._internals()._port?._transactionIdWrite)
+  public nextTransactionIdKey = (): string => {
+    const transactionIdKey = String(this._internals()._port?._transactionIdWrite)
+    // A key handed out and never logged stays here, and a TCP key is new every
+    // time, so the oldest goes once there are as many as the log holds.
+    if (this._startedAt.size >= MAX_TRANSACTIONS) {
+      for (const oldest of this._startedAt.keys()) {
+        this._startedAt.delete(oldest)
+        break
+      }
+    }
+    this._startedAt.set(transactionIdKey, Date.now())
+    return transactionIdKey
+  }
+
+  /** A position in the log: what `list({ afterMark })` counts from. */
+  public mark = (): number => this._logged
+
+  /** The transactions that match `query`, oldest first. */
+  public list = ({
+    limit,
+    sinceTimestamp,
+    failedOnly,
+    afterMark
+  }: TransactionQuery = {}): LoggedTransaction[] => {
+    const matching = this._recent
+      .slice(Math.max(0, (afterMark ?? 0) - (this._logged - this._recent.length)))
+      .filter(
+        (transaction) =>
+          (sinceTimestamp === undefined || transaction.timestamp >= sinceTimestamp) &&
+          (!failedOnly ||
+            transaction.errorMessage !== undefined ||
+            transaction.timeout ||
+            transaction.exceptionCode !== undefined)
+      )
+    return limit === undefined ? matching : matching.slice(Math.max(0, matching.length - limit))
+  }
 
   /**
    * Log the request filed under `transactionIdKey`, and only that one.
@@ -123,9 +197,13 @@ export class TransactionLog {
     // request times out rather than resolving.
     delete rawTransactions[transactionIdKey]
 
+    const now = DateTime.now().toMillis()
+    const startedAt = this._startedAt.get(transactionIdKey)
+    this._startedAt.delete(transactionIdKey)
+
     const transaction: Transaction = {
       id: `${transactionIdKey}__${v4()}`,
-      timestamp: DateTime.now().toMillis(),
+      timestamp: now,
       unitId: rawTransaction.nextAddress,
       address: requestedAddress(rawTransaction),
       code: rawTransaction.nextCode,
@@ -133,8 +211,14 @@ export class TransactionLog {
       timeout: rawTransaction._timeoutFired,
       request: toHexString(rawTransaction.request),
       responses: (rawTransaction.responses ?? []).map(toHexString),
-      errorMessage
+      errorMessage,
+      durationMs: startedAt === undefined ? undefined : now - startedAt
     }
+
+    const exceptionCode = exceptionCodeOf(transaction.responses)
+    this._recent.push(exceptionCode === undefined ? transaction : { ...transaction, exceptionCode })
+    this._logged += 1
+    if (this._recent.length > MAX_TRANSACTIONS) this._recent.shift()
 
     this._windows.send('transaction', transaction, 'main')
   }

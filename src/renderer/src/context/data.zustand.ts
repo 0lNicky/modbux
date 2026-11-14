@@ -15,6 +15,7 @@ import { useClientZustand } from './client.zustand'
 import { onEvent } from '@renderer/events'
 import {
   ClientState,
+  MAX_TRANSACTIONS,
   RegisterData,
   ScanUnitIDResult,
   Transaction,
@@ -70,7 +71,7 @@ export const useDataZustand = create<DataZustand, [['zustand/mutative', never]]>
     addTransactions: (transactions) =>
       set((state) => {
         state.transactions.unshift(...[...transactions].reverse())
-        while (state.transactions.length > 1000) state.transactions.pop()
+        while (state.transactions.length > MAX_TRANSACTIONS) state.transactions.pop()
       }),
     clearTransactions: () => {
       pendingTransactions.drop()

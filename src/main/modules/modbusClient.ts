@@ -26,7 +26,7 @@ import {
 } from '@shared'
 import { Windows } from '../windows'
 import * as serialPorts from './modbusClient/serialPorts'
-import { TransactionLog } from './modbusClient/transactionLog'
+import { LoggedTransaction, TransactionLog, TransactionQuery } from './modbusClient/transactionLog'
 import {
   NodeStyleCallback,
   ReadCoilResult,
@@ -210,7 +210,10 @@ export class ModbusClient {
     this._client = new ModbusRTU()
     this._appState = appState
     this._windows = windows
-    this._transactionLog = new TransactionLog({ client: (): ModbusRTU => this._client, windows })
+    this._transactionLog = new TransactionLog({
+      client: (): ModbusRTU => this._client,
+      windows
+    })
 
     this._attachClientHandlers()
   }
@@ -222,6 +225,13 @@ export class ModbusClient {
    * that gets replaced comes back without them. Every site that assigns
    * `this._client` calls this.
    */
+  /** The recent transactions, oldest first. */
+  public transactions = (query?: TransactionQuery): LoggedTransaction[] =>
+    this._transactionLog.list(query)
+
+  /** A position in the log, for `transactions({ afterMark })`. */
+  public transactionMark = (): number => this._transactionLog.mark()
+
   private _attachClientHandlers = (): void => {
     this._client
       .on('error', (error) => {
