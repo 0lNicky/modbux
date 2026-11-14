@@ -15,6 +15,7 @@ import {
   cleanServerState,
   connectClient,
   disconnectClient,
+  expectNewestTransactionCell,
   loadServerConfig,
   navigateToClient
 } from '../../fixtures/helpers'
@@ -114,8 +115,7 @@ test.describe.serial('MCP client transactions', () => {
   test('the transaction grid shows the duration column', async ({ mainPage }) => {
     await mainPage.getByTestId('show-log-btn').click()
 
-    const row = mainPage.getByTestId('transaction-log-panel').locator('.MuiDataGrid-row').first()
-    await expect(row.locator('[data-field="durationMs"]')).toHaveText(/^\d+$/)
+    await expectNewestTransactionCell(mainPage, 'durationMs', /^\d+$/)
 
     await mainPage.getByTestId('show-log-btn').click()
   })
