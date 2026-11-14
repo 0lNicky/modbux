@@ -424,6 +424,54 @@ describe('a multi-write is all of its addresses or none', () => {
     }
   )
 
+  // The handler writes the response's byte count into one byte and answers a
+  // quantity that overflows it as exception 4, before any accessor. The byte
+  // count is quantity / 8 rounded up for FC1 and FC2, and quantity * 2 for FC3
+  // and FC4, so the largest quantity is 2040 and 127.
+  describe.each([
+    [
+      'FC1',
+      2040,
+      (count: number) =>
+        send((callback) =>
+          handlers.readCoilsOrInputDiscretes(
+            frame(1, 1, [...word(0), ...word(count)]),
+            vectorOn('tcp'),
+            1,
+            callback,
+            1
+          )
+        )
+    ],
+    [
+      'FC2',
+      2040,
+      (count: number) =>
+        send((callback) =>
+          handlers.readCoilsOrInputDiscretes(
+            frame(1, 2, [...word(0), ...word(count)]),
+            vectorOn('tcp'),
+            1,
+            callback,
+            2
+          )
+        )
+    ],
+    ['FC3', 127, (count: number) => readHolding(vectorOn('tcp'), 1, 0, count)],
+    ['FC4', 127, (count: number) => readInput(vectorOn('tcp'), 1, 0, count)]
+  ])('a %s read', (_name, largest, read) => {
+    it(`of ${largest} reaches the vector and is recorded`, async () => {
+      await read(largest)
+
+      expect(requests()).toEqual([expect.objectContaining({ count: largest })])
+    })
+
+    it(`of ${largest + 1} is answered with exception 4 by the handler and records nothing`, async () => {
+      expect(await read(largest + 1)).toEqual({ exception: SERVER_DEVICE_FAILURE })
+      expect(requests()).toEqual([])
+    })
+  })
+
   it('writes every register of an FC16, tells the view of each, and records the values', async () => {
     hostRegister('1', 0, 0)
     windows.send.mockClear()
