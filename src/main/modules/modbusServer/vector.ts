@@ -6,8 +6,9 @@ import {
   UnitIdStringSchema
 } from '@shared'
 import type { FCallback, FCallbackVal, IServiceVector } from 'modbus-serial'
+import { ServerFaults } from './faults'
 import { ServerRegistry } from './registry'
-import { ServerRequestLog } from './requestLog'
+import { ServerRequestFault, ServerRequestLog } from './requestLog'
 
 /**
  * The three Modbus exception codes this server sends.
@@ -47,10 +48,15 @@ type IServiceVectorGetMultiple = (
 ) => void
 type IServiceVectorSet<T> = (addr: number, value: T, unitID: number, cb: FCallback) => void
 
-/** What the vector is bound to: one uuid of one registry, on one transport. */
-interface VectorScope {
+/** What every vector reads and writes: the registers, the request log and the fault rules. */
+export interface VectorStores {
   registry: ServerRegistry
   requestLog: ServerRequestLog
+  faults: ServerFaults
+}
+
+/** What the vector is bound to: one uuid of the stores, on one transport. */
+interface VectorScope extends VectorStores {
   uuid: string
   transport: ServerTransport
 }
@@ -94,6 +100,12 @@ type ServerAnswer<K extends RegisterType> =
   | ServerAnswerException
   | { outcome: 'no_response' }
 
+/** An answer, and how long a delay rule holds it back. */
+interface ServedRequest<K extends RegisterType> {
+  answer: ServerAnswer<K>
+  delayMs?: number
+}
+
 /** A Modbus error as modbus-serial reads one: an `Error` carrying the code. */
 const modbusError = (code: number): Error => Object.assign(new Error(), { modbusErrorCode: code })
 
@@ -125,12 +137,22 @@ const refuseUnit = <K extends RegisterType>(transport: ServerTransport): ServerA
  * Every check runs before the first address is read or written, so a write is
  * all of its addresses or none of them, and the answer is one decision about
  * the request rather than one per address.
+ *
+ * A fault rule is one of those checks. It is asked once the request is known
+ * to be one the handler has not answered itself, and before anything the
+ * server would answer on its own, so a rule for a unit this server does not
+ * host or for an address past the top still decides. `exception` and
+ * `no_response` return before the first write; `delay` lets the request run as
+ * usual and holds back the answer, which `reply` sends late.
  */
 const serve = <K extends RegisterType>(
-  { registry, requestLog, uuid, transport }: VectorScope,
+  { registry, requestLog, faults, uuid, transport }: VectorScope,
   request: ServerRequestInput<K>,
   fallback: ServerDataValue<K>
-): ServerAnswer<K> => {
+): ServedRequest<K> => {
+  let fault: ServerRequestFault | undefined
+  let delayMs: number | undefined
+
   const decide = (): ServerAnswer<K> => {
     const unitIdSafe = UnitIdStringSchema.safeParse(String(request.unitId))
     if (!unitIdSafe.success) {
@@ -145,6 +167,31 @@ const serve = <K extends RegisterType>(
     // nothing.
     if (count === 0) return { outcome: 'exception', code: ILLEGAL_DATA_ADDRESS, reply: false }
 
+    const broadcast = isBroadcast(transport, unitId)
+    const applied = faults.decide(uuid, {
+      unitId: request.unitId,
+      registerType,
+      address,
+      count,
+      direction: values ? 'write' : 'read'
+    })
+    if (applied) {
+      const { rule, action } = applied
+      fault = { rule }
+      // A broadcast is never answered, so an exception rule leaves it silent
+      // and a delay rule has nothing to hold back.
+      if (action.kind === 'no_response') return { outcome: 'no_response' }
+      if (action.kind === 'exception') {
+        return broadcast
+          ? { outcome: 'no_response' }
+          : { outcome: 'exception', code: action.code, reply: true }
+      }
+      if (!broadcast) {
+        delayMs = action.ms
+        fault = { rule, delayMs }
+      }
+    }
+
     // A request running past the top of the range asks for addresses the
     // protocol cannot express, and neither a map nor `registry.write` refuses
     // one, so the range is asked before any address is read or written.
@@ -153,7 +200,7 @@ const serve = <K extends RegisterType>(
     // A broadcast write reaches every unit on the bus and is never answered,
     // and a broadcast read has nothing to answer with. One out of range is
     // written nowhere, and the silence stays.
-    if (isBroadcast(transport, unitId)) {
+    if (broadcast) {
       if (!values || !inRange) return { outcome: 'no_response' }
       for (const hostedUnitId of registry.hostedUnitIds(uuid))
         for (const [offset, value] of values.entries())
@@ -191,9 +238,10 @@ const serve = <K extends RegisterType>(
     count: request.count,
     outcome: answer.outcome,
     ...(answer.outcome === 'exception' && { exceptionCode: answer.code }),
-    ...(request.values && { values: request.values })
+    ...(request.values && { values: request.values }),
+    ...(fault && { fault })
   })
-  return answer
+  return { answer, delayMs }
 }
 
 /**
@@ -214,7 +262,7 @@ interface Replies<K extends RegisterType, C> {
  * the first error it is given and ignores the rest. Silence calls none, and
  * neither does an exception the handler has already sent.
  */
-const reply = <K extends RegisterType, C>(
+const answerNow = <K extends RegisterType, C>(
   answer: ServerAnswer<K>,
   callbacks: readonly C[],
   { ok, refuse }: Replies<K, C>
@@ -227,6 +275,47 @@ const reply = <K extends RegisterType, C>(
   }
   if (!answer.reply) return
   for (const [offset, cb] of callbacks.entries()) ok(cb, answer, offset)
+}
+
+/**
+ * Answers callbacks the way the handler calls an accessor: inside try/catch,
+ * and a throw is answered exception 4, which is what the handler's own catch
+ * answers. A collected answer runs from a microtask and a delayed one from a
+ * timer, and nothing of modbus-serial's would catch a throw from either.
+ */
+const guarded = <K extends RegisterType, C>({ ok, refuse }: Replies<K, C>): Replies<K, C> => ({
+  ok: (cb, answer, offset): void => {
+    try {
+      ok(cb, answer, offset)
+    } catch {
+      refuse(cb, modbusError(SERVER_DEVICE_FAILURE))
+    }
+  },
+  refuse: (cb, error): void => {
+    try {
+      refuse(cb, error)
+    } catch {
+      refuse(cb, modbusError(SERVER_DEVICE_FAILURE))
+    }
+  }
+})
+
+/**
+ * Answers a request now, or once its delay has run out.
+ *
+ * The handler keeps the callbacks it handed over and the response buffer they
+ * fill, and sends the frame from whichever call completes it, so a callback
+ * called from a timer writes the same frame later. That timer runs outside
+ * the handler's try/catch, so a delayed answer is `guarded`, the way a
+ * collected one is.
+ */
+const reply = <K extends RegisterType, C>(
+  { answer, delayMs }: ServedRequest<K>,
+  callbacks: readonly C[],
+  replies: Replies<K, C>
+): void => {
+  if (delayMs === undefined) return answerNow(answer, callbacks, replies)
+  setTimeout(() => answerNow(answer, callbacks, guarded(replies)), delayMs)
 }
 
 /**
@@ -366,29 +455,6 @@ const collectBits = <V, C>(
   }
 }
 
-/**
- * Answers collected callbacks the way the handler calls an accessor: inside
- * try/catch, and a throw is answered exception 4, which is what the handler's
- * own catch answers. A collected answer runs from a microtask, where nothing of
- * modbus-serial's would catch it.
- */
-const guarded = <K extends RegisterType, C>({ ok, refuse }: Replies<K, C>): Replies<K, C> => ({
-  ok: (cb, answer, offset): void => {
-    try {
-      ok(cb, answer, offset)
-    } catch {
-      refuse(cb, modbusError(SERVER_DEVICE_FAILURE))
-    }
-  },
-  refuse: (cb, error): void => {
-    try {
-      refuse(cb, error)
-    } catch {
-      refuse(cb, modbusError(SERVER_DEVICE_FAILURE))
-    }
-  }
-})
-
 /** A bit read, FC1 or FC2, answered once the request's last address has arrived. */
 const getBits = (
   scope: VectorScope,
@@ -428,12 +494,11 @@ const setCoils = (scope: VectorScope): IServiceVectorSet<boolean> => {
  * needs no rebind.
  */
 export const createVector = (
-  registry: ServerRegistry,
-  requestLog: ServerRequestLog,
+  stores: VectorStores,
   uuid: string,
   transport: ServerTransport
 ): IServiceVector => {
-  const scope: VectorScope = { registry, requestLog, uuid, transport }
+  const scope: VectorScope = { ...stores, uuid, transport }
   return {
     getCoil: getBits(scope, 'coils'),
     getDiscreteInput: getBits(scope, 'discrete_inputs'),

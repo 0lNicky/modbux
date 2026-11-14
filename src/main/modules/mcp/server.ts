@@ -9,6 +9,7 @@ import { scanTools } from './tools/scan'
 import { serverTools } from './tools/servers'
 import { serverPointTools } from './tools/serverPoints'
 import { serverRequestTools } from './tools/serverRequests'
+import { serverFaultTools } from './tools/serverFaults'
 
 /**
  * Every tool group, one file each under `tools/`.
@@ -23,7 +24,8 @@ export const TOOL_GROUPS: readonly (readonly McpTool[])[] = [
   projectTools,
   scanTools,
   serverPointTools,
-  serverRequestTools
+  serverRequestTools,
+  serverFaultTools
 ]
 
 const INSTRUCTIONS = `Modbux is a Modbus TCP/RTU client and server on the user's machine. The client tools drive the one Modbus client in the Modbux main window, and the user sees every change there. Addresses are PDU addresses (0-based); read the resource modbux://encoding for data type widths, byte order and address notation before mapping a point table. Config files travel as JSON text: the export tools answer the file, the import tools take it, and the schemas are the modbux://schema/* resources. Every tool needs the Modbux main window to be open.`

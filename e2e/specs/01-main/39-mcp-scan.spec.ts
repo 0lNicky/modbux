@@ -218,7 +218,8 @@ test.describe.serial('MCP scan tools', () => {
       expect(prompts.map((prompt) => prompt.name)).toEqual([
         'point_table_to_client',
         'point_table_to_simulator',
-        'closed_loop_test'
+        'closed_loop_test',
+        'simulate_device_fault'
       ])
 
       send({

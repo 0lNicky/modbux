@@ -31,7 +31,9 @@ import type {
   SerialGroupFixResult,
   RendererCommandRequest,
   RendererCommandReply,
-  McpStatus
+  McpStatus,
+  ServerFaultRule,
+  ServerFaults
 } from '@shared'
 // `import type`, because shared is the one module all three processes compile
 // against and notistack is a renderer dependency. `variant` below is the only
@@ -106,7 +108,9 @@ export const IPC_CHANNELS = [
   'get_mcp_status',
   'set_mcp_enabled',
   'set_mcp_allow_writes',
-  'regenerate_mcp_token'
+  'regenerate_mcp_token',
+  'get_server_faults',
+  'clear_server_faults'
 ] as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[number]
@@ -407,6 +411,23 @@ export interface IpcHandlerSpec {
     args: []
     return: McpStatus
   }
+
+  /**
+   * Every server that has fault rules, with its list, keyed by uuid.
+   *
+   * `server_faults` is pushed on a change, so a window that loads after the
+   * last one asks this once.
+   */
+  ['get_server_faults']: {
+    args: []
+    return: Record<string, ServerFaultRule[]>
+  }
+
+  /** Remove every fault rule of a server (UUID). `server_faults` carries the empty list. */
+  ['clear_server_faults']: {
+    args: [string]
+    return: void
+  }
 }
 
 export type IpcHandlerMap = {
@@ -435,7 +456,8 @@ export const EVENTS_TO_RENDERER = [
   'address_groups',
   'rtu_server_status',
   'renderer_command',
-  'mcp_status'
+  'mcp_status',
+  'server_faults'
 ] as const
 
 /** The events a window pushes to main. `sendEvent` there, `onIpcEvent` here. */
@@ -462,6 +484,8 @@ export interface IpcEventPayloadMap {
   ['renderer_command_result']: [RendererCommandReply]
   /** The MCP server's status, on every change to it. */
   ['mcp_status']: [McpStatus]
+  /** One server's fault rules, whole, on every change to them. */
+  ['server_faults']: [ServerFaults]
 }
 
 export interface BackendMessage {

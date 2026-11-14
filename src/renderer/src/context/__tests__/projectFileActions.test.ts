@@ -125,6 +125,7 @@ describe('importProject', () => {
     server().setSelectedUuid(SECOND)
     const saved = file.exportProject()
     await moveElsewhere(modules)
+    calls.length = 0
 
     expect(await file.importProject(saved)).toMatchObject({
       ok: true,
@@ -132,6 +133,8 @@ describe('importProject', () => {
       portsRefused: [],
       serversRefused: 0
     })
+    // The main server outlives the import, and its fault rules do not.
+    expect(calls).toContainEqual({ method: 'clearServerFaults', payload: MAIN_SERVER_UUID })
 
     expect(client().name).toBe('boiler')
     expect(client().connectionConfig.unitId).toBe(17)

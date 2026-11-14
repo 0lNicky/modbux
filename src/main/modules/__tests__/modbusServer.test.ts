@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { BaseDataType, RegisterParams, UnitIdString } from '@shared'
 import type { Windows } from '../../windows'
-import { defaultSerialPortOptions, MCP_PORT } from '@shared'
+import { defaultSerialPortOptions, MAIN_SERVER_UUID, MCP_PORT } from '@shared'
 import type { IServiceVector } from 'modbus-serial/ServerTCP'
 
 // Configurable port availability for net mock
@@ -2279,6 +2279,80 @@ describe('ModbusServer', () => {
 
       await server.deleteServer(uuid)
       expect(rtuInstance.close).toHaveBeenCalled()
+    })
+  })
+
+  describe('fault rules', () => {
+    const rule = { unitId: 1, action: { kind: 'no_response' as const } }
+    const rtuConfig = {
+      com: '/dev/ttyUSB0',
+      options: {
+        baudRate: '9600' as const,
+        dataBits: 8 as const,
+        stopBits: 1 as const,
+        parity: 'none' as const
+      }
+    }
+
+    it('tells every window the list on each change', () => {
+      server.setFaults(uuid, [rule])
+      server.clearFaults(uuid)
+
+      expect(getWindowCalls('server_faults').map(([, payload]) => payload)).toEqual([
+        { uuid, rules: [rule] },
+        { uuid, rules: [] }
+      ])
+      expect(getAddressees('server_faults')).toEqual([undefined, undefined])
+    })
+
+    it('forgets a deleted server’s rules, and says so', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      server.setFaults(uuid, [rule])
+      clearWindowCalls()
+
+      await server.deleteServer(uuid)
+
+      expect(server.getFaults(uuid)).toEqual([])
+      expect(server.allFaults()).toEqual({})
+      expect(getWindowCalls('server_faults').map(([, payload]) => payload)).toEqual([
+        { uuid, rules: [] }
+      ])
+    })
+
+    it('keeps another server’s rules when one is deleted', async () => {
+      server.setFaults('the-other-one', [rule])
+
+      await server.deleteServer(uuid)
+
+      expect(server.allFaults()).toEqual({ 'the-other-one': [rule] })
+    })
+
+    it('refuses to drop connections on the RTU server', async () => {
+      await server.startRtuServer({ uuid, serialConfig: rtuConfig })
+
+      expect(server.dropConnections(uuid)).toEqual({
+        error: 'The server runs on RTU, which has no connections to drop'
+      })
+    })
+
+    it('refuses to drop connections on a uuid with no listener', () => {
+      expect(server.dropConnections('not-a-server')).toEqual({
+        error: 'The server not-a-server has no TCP listener'
+      })
+    })
+
+    it('knows the main server, a server with a listener and the RTU server, and no other', async () => {
+      expect(server.hasServer(MAIN_SERVER_UUID)).toBe(true)
+      expect(server.hasServer(uuid)).toBe(false)
+
+      await server.createServer({ uuid, port: 5020 })
+      expect(server.hasServer(uuid)).toBe(true)
+
+      await server.stopAllTcpServers()
+      expect(server.hasServer(uuid)).toBe(false)
+
+      await server.startRtuServer({ uuid, serialConfig: rtuConfig })
+      expect(server.hasServer(uuid)).toBe(true)
     })
   })
 

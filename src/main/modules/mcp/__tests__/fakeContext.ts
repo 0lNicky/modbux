@@ -11,6 +11,7 @@ import {
   defaultConnectionConfig,
   defaultRegisterConfig,
   emptyRegisterMapping,
+  MAIN_SERVER_UUID,
   NumberRegisters,
   RegisterMapping
 } from '@shared'
@@ -21,7 +22,9 @@ import type {
   ScanUnitIdsOutcome,
   WriteOutcome
 } from '../../modbusClient'
+import { ServerFaults } from '../../modbusServer/faults'
 import { ServerRequestLog } from '../../modbusServer/requestLog'
+import type { DropConnectionsOutcome } from '../../modbusServer'
 import type { LoggedTransaction } from '../../modbusClient/transactionLog'
 import { McpToolContext } from '../registry'
 import { createMcpServer } from '../server'
@@ -55,6 +58,11 @@ export interface FakeContext extends McpToolContext {
   ) => void
   /** The stand-in server's request log, which `server.getRequests` reads. */
   serverRequests: ServerRequestLog
+  /** The stand-in server's fault rules, which the fault tools read and write. */
+  serverFaults: ServerFaults
+  /** The uuids `server.hasServer` knows. The main server's is among them. */
+  knownServers: Set<string>
+  dropConnections: ReturnType<typeof vi.fn<(uuid: string) => DropConnectionsOutcome>>
   read: ReturnType<typeof vi.fn<() => Promise<ReadOutcome>>>
   scanRegisters: ReturnType<typeof vi.fn<McpToolContext['client']['scanRegisters']>>
   scanUnitIds: ReturnType<typeof vi.fn<McpToolContext['client']['scanUnitIds']>>
@@ -96,6 +104,9 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
       )
   )
   const serverRequests = new ServerRequestLog()
+  const serverFaults = new ServerFaults({ onChange: () => undefined })
+  const knownServers = new Set([MAIN_SERVER_UUID])
+  const dropConnections = vi.fn<(uuid: string) => DropConnectionsOutcome>(() => ({ dropped: 0 }))
   const registerConfig = { ...defaultRegisterConfig }
   const connectionConfig = { ...defaultConnectionConfig, unitId: 7 }
 
@@ -185,7 +196,12 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
     rendererCommands: { send: send as unknown as McpToolContext['rendererCommands']['send'] },
     server: {
       readRegisters,
-      getRequests: (uuid, filter) => serverRequests.list(uuid, filter)
+      getRequests: (uuid, filter) => serverRequests.list(uuid, filter),
+      hasServer: (uuid) => knownServers.has(uuid),
+      setFaults: (uuid, rules) => serverFaults.set(uuid, rules),
+      getFaults: (uuid) => serverFaults.status(uuid),
+      clearFaults: (uuid) => serverFaults.clear(uuid),
+      dropConnections
     },
     mainWindowOpen: () => mainWindowOpen,
     allowWrites: () => allowWrites,
@@ -213,6 +229,9 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
       }
     },
     serverRequests,
+    serverFaults,
+    knownServers,
+    dropConnections,
     read,
     scanRegisters,
     scanUnitIds,

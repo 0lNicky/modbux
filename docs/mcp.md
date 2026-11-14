@@ -40,11 +40,12 @@ claude mcp add --transport http modbux http://127.0.0.1:15502/mcp --header "Auth
 
 ## Prompts
 
-三個 prompt 都只有一個必填參數 `pointTable`：點表的文字（從規格書貼上的列、CSV 或 Markdown 表格皆可）。
+前三個 prompt 只有一個必填參數 `pointTable`：點表的文字（從規格書貼上的列、CSV 或 Markdown 表格皆可）。
 
 - `point_table_to_client`：讀 `client_get_config`，必要時 `client_set_connection`，先 `client_apply_point_table` 做 `dryRun: true` 並修正被拒絕的點，再正式套用，接著 `client_connect`、`client_read_points`。用數值合理性檢查 word order 與比例；數值不合理時，依 `modbux://encoding` 試其他 byte order。
 - `point_table_to_simulator`：`server_list` / `server_create` 建立 Server，`server_apply_point_table` 先 `dryRun` 再套用，每個點給固定值或產生器範圍，最後用 `server_get_values` 確認。
 - `closed_loop_test`：用點表建立 Server，把 Client 指向 `127.0.0.1` 與該 Server 的 port，套用同一份點表，讀取後逐點與 `server_get_values` 比對並回報不一致的點。通過只代表兩端一致，不代表點表與真實裝置相符。
+- `simulate_device_fault`：必填參數 `situation`，用文字描述要模擬的設備故障。說明如何用 `server_set_faults` 的規則組出離線、忙碌、拒絕寫入、回應慢，用 `server_drop_connections` 模擬斷線，用 `server_set_values` 組出值凍結、無效值哨兵（`0xFFFF`、`0x8000`、float 的 NaN）、超量程與累計值回捲，再用 `server_get_requests` 與 `server_get_faults` 確認故障真的被觸發。
 
 ## Poll tools
 
@@ -71,7 +72,43 @@ poll 期間 `client_read_points` 會被拒絕（`Cannot read during a poll`）�
 ## Server 請求紀錄
 
 - `server_get_requests`：`readOnlyHint`。回傳主站對某台 Server 送出的請求，由舊到新，一個請求一筆，不論位址數量。參數：`uuid`（省略時用主 Server）、`limit`（預設 50）、`sinceTimestamp`（毫秒，含該時刻）、`failedOnly`（只回 exception 與沒回應的請求）。
-- 每筆有 `timestamp`、`uuid`、`unitId`、`direction`（`read` 或 `write`）、`registerType`、`address`（第一個 PDU 位址）、`count`、`outcome`（`ok`、`exception` 加 `exceptionCode`、`no_response`），寫入另有 `values`。
+- 每筆有 `timestamp`、`uuid`、`unitId`、`direction`（`read` 或 `write`）、`registerType`、`address`（第一個 PDU 位址）、`count`、`outcome`（`ok`、`exception` 加 `exceptionCode`、`no_response`），寫入另有 `values`。由故障規則決定的請求另有 `fault`：`rule` 是規則在清單裡的位置（從 0 起算），`delay` 規則另有 `delayMs`。
 - 每台 Server 在 main 的記憶體保留最近的紀錄，上限寫在 tool 說明裡。刪除 Server 時清掉，不存檔。
 - RTU 的 unit 0 是 broadcast：讀取不回應，記為 `no_response`；寫入寫進每個有資料的 unit、不回應，記為 `ok`。超過位址 65535 的 broadcast 寫入一個位址都不寫，記為 `no_response`。
 - 不存在的 `uuid` 回空清單。這個 tool 不經過 renderer，所以 Server 畫面拆到另一個視窗時也能用。
+
+## 故障注入
+
+讓 Modbux 的 Server 像故障的設備一樣回應主站，用來測上位系統遇到 exception、不回應、延遲、斷線時的行為。四個 tool 的對象都是 Modbux 自己的模擬器，不是裝置，所以都不受 "Allow writes to devices" 管。四個都不經過 renderer，Server 畫面拆到另一個視窗時也能用。`uuid` 省略時用主 Server；main 沒有服務的 `uuid` 回錯誤。
+
+- `server_set_faults`：參數 `uuid`、`rules`。整份取代，回傳生效的清單。空清單等於清除。
+- `server_get_faults`：`readOnlyHint`。回目前的清單，每條規則加上 `matched`（它是第一條符合的請求數）、`triggered`（它實際決定的請求數）與 `forSeconds` 規則的 `expiresAt`（epoch 毫秒）。
+- `server_clear_faults`：清空。
+- `server_drop_connections`：關掉主站對該 Server 開著的 TCP 連線，listener 留著，主站可以重連。回傳關掉幾條。RTU 模式回錯誤。
+
+一條規則：
+
+```ts
+{
+  unitId?: number
+  registerType?: 'coils' | 'discrete_inputs' | 'input_registers' | 'holding_registers'
+  addressRange?: [start, end] // PDU 位址，含兩端
+  direction?: 'read' | 'write'
+  action:
+    | { kind: 'exception'; code: number }
+    | { kind: 'no_response' }
+    | { kind: 'delay'; ms: number }
+  everyNth?: number
+  forSeconds?: number
+}
+```
+
+- 省略的條件表示不限。請求碰到 `addressRange` 內任何一個位址就算符合。
+- 每個請求依序比對清單，第一條所有條件都符合的規則決定它，所以清單的順序就是優先順序。
+- `everyNth: N` 時，規則只決定它符合的第 N、2N、… 個請求；其餘的照常回應，也不會交給後面的規則。
+- `exception` 回該 exception code，`no_response` 不回應；兩者的寫入都不寫進 Server。`delay` 照常讀寫，晚 `ms` 毫秒才回應。`delay` 的上限與一份清單的規則數上限寫在 tool 說明裡。
+- 規則在 Server 自己的檢查之前生效，所以對 Server 沒有的 unit id 或超出範圍的位址也有效。
+- RTU 的 broadcast（unit 0）不論規則都不回應；`exception` 或 `no_response` 規則會讓 broadcast 寫入一個位址都不寫。
+- `forSeconds` 秒後規則自動移除。
+- 規則只存在 main 的記憶體：重開 app、刪除 Server、對該 Server 載入設定檔或 project 檔時清空。
+- Server 有規則時，Server 畫面（main window 與拆出來的 Server 視窗都是）顯示規則條數與 **Clear faults** 按鈕。

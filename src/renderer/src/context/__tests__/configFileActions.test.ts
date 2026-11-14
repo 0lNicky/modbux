@@ -161,6 +161,27 @@ describe('the server', () => {
     expect(undo().server.past).toHaveLength(2)
   })
 
+  it('clears the fault rules of the server it opens into', async () => {
+    const { server, file } = await loadServer()
+    const saved = file.exportServerConfig()
+    if (saved === undefined) throw new Error('the selected server was not exported')
+    server().setSelectedUuid('another')
+    calls.length = 0
+
+    await file.importServerConfig(saved, MAIN_SERVER_UUID)
+
+    expect(calls).toContainEqual({ method: 'clearServerFaults', payload: MAIN_SERVER_UUID })
+  })
+
+  it('leaves the fault rules alone for a file it refuses', async () => {
+    const { file } = await loadServer()
+    calls.length = 0
+
+    await file.importServerConfig('{ not json')
+
+    expect(calls.map((call) => call.method)).not.toContain('clearServerFaults')
+  })
+
   it('answers nothing to save for a selection that names no server', async () => {
     const { server, file } = await loadServer()
     server().setSelectedUuid('gone')

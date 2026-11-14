@@ -3,9 +3,7 @@ import { ServerTCP } from 'modbus-serial'
 import net from 'net'
 import { Windows } from '../../windows'
 import { emitServerMessage } from './messages'
-import { ServerRegistry } from './registry'
-import { ServerRequestLog } from './requestLog'
-import { createVector } from './vector'
+import { createVector, VectorStores } from './vector'
 
 const isPort = (port: number): boolean => Number.isInteger(port) && port >= 1 && port <= 65535
 
@@ -18,10 +16,8 @@ const isPort = (port: number): boolean => Number.isInteger(port) && port >= 1 &&
  */
 export const BIND_TIMEOUT_MS = 5000
 
-interface TcpServersParams {
+interface TcpServersParams extends VectorStores {
   windows: Windows
-  registry: ServerRegistry
-  requestLog: ServerRequestLog
 }
 
 /**
@@ -33,16 +29,14 @@ interface TcpServersParams {
  */
 export class TcpServers {
   private _windows: Windows
-  private _registry: ServerRegistry
-  private _requestLog: ServerRequestLog
+  private _stores: VectorStores
 
   private _port: Map<string, number> = new Map()
   private _servers: Map<string, ServerTCP> = new Map()
 
-  constructor({ windows, registry, requestLog }: TcpServersParams) {
+  constructor({ windows, ...stores }: TcpServersParams) {
     this._windows = windows
-    this._registry = registry
-    this._requestLog = requestLog
+    this._stores = stores
   }
 
   /** The port a uuid is listening on, or nothing where it has no listener. */
@@ -67,6 +61,23 @@ export class TcpServers {
       })
       tester.listen(port, '0.0.0.0')
     })
+  }
+
+  /**
+   * Destroys every connection open on `uuid`'s listener and leaves the listener
+   * up, so a master can connect again. Answers how many were open, or nothing
+   * where the uuid has no listener.
+   *
+   * `servertcp.js` 8.0.25 files each socket in `socks` on `connection` and
+   * deletes it on the socket's `close`, and `ServerTCP.d.ts` declares the map.
+   * This is the one place outside modbus-serial that reads it.
+   */
+  public dropConnections(uuid: string): number | undefined {
+    const server = this._servers.get(uuid)
+    if (!server) return undefined
+    const sockets = [...server.socks.keys()]
+    for (const socket of sockets) socket.destroy()
+    return sockets.length
   }
 
   /**
@@ -105,7 +116,7 @@ export class TcpServers {
     uuid: string,
     port: number
   ): Promise<{ ok: boolean; errorCode?: string }> {
-    const server = new ServerTCP(createVector(this._registry, this._requestLog, uuid, 'tcp'), {
+    const server = new ServerTCP(createVector(this._stores, uuid, 'tcp'), {
       host: '0.0.0.0',
       port
     })

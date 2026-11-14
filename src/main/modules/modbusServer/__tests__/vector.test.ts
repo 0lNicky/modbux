@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import { createRequire } from 'module'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IServiceVector } from 'modbus-serial'
 import type { UnitIdString } from '@shared'
 import type { Windows } from '../../../windows'
+import { ServerFaults } from '../faults'
 import { ServerRegistry } from '../registry'
 import { ServerRequestLog } from '../requestLog'
 import {
@@ -66,8 +67,10 @@ const answered = (): Promise<void> => Promise.resolve()
 let windows: Windows & { send: ReturnType<typeof vi.fn> }
 let registry: ServerRegistry
 let requestLog: ServerRequestLog
+let faults: ServerFaults
 
-const vectorOn = (transport: ServerTransport) => createVector(registry, requestLog, uuid, transport)
+const vectorOn = (transport: ServerTransport) =>
+  createVector({ registry, requestLog, faults }, uuid, transport)
 
 /** Runs `handle`, which sends one frame through a handler, and answers what came back. */
 const send = async (handle: (callback: HandlerCallback) => void): Promise<Reply> => {
@@ -194,6 +197,7 @@ beforeEach(() => {
   windows = { send: vi.fn() } as unknown as Windows & { send: ReturnType<typeof vi.fn> }
   registry = new ServerRegistry({ windows, onUnitData: () => undefined })
   requestLog = new ServerRequestLog()
+  faults = new ServerFaults({ onChange: () => undefined })
 })
 
 describe('a read is one request', () => {
@@ -606,5 +610,418 @@ describe('a collected answer', () => {
       expect.objectContaining({ modbusErrorCode: SERVER_DEVICE_FAILURE }),
       false
     )
+  })
+})
+
+//
+// ─── Fault rules ─────────────────────────────────────────────────────────────
+//
+
+/** Sends one frame through a handler; what it sends back is a callback argument. */
+type Frame = (callback: HandlerCallback) => void
+
+const fc1 =
+  (vector: IServiceVector, unitId: number, address: number, count: number): Frame =>
+  (callback) =>
+    handlers.readCoilsOrInputDiscretes(
+      frame(unitId, 1, [...word(address), ...word(count)]),
+      vector,
+      unitId,
+      callback,
+      1
+    )
+
+const fc3 =
+  (vector: IServiceVector, unitId: number, address: number, count: number): Frame =>
+  (callback) =>
+    handlers.readMultipleRegisters(
+      frame(unitId, 3, [...word(address), ...word(count)]),
+      vector,
+      unitId,
+      callback
+    )
+
+const fc4 =
+  (vector: IServiceVector, unitId: number, address: number, count: number): Frame =>
+  (callback) =>
+    handlers.readInputRegisters(
+      frame(unitId, 4, [...word(address), ...word(count)]),
+      vector,
+      unitId,
+      callback
+    )
+
+const fc5 =
+  (vector: IServiceVector, unitId: number, address: number, state: boolean): Frame =>
+  (callback) =>
+    handlers.writeCoil(
+      frame(unitId, 5, [...word(address), state ? 0xff : 0, 0]),
+      vector,
+      unitId,
+      callback
+    )
+
+const fc6 =
+  (vector: IServiceVector, unitId: number, address: number, value: number): Frame =>
+  (callback) =>
+    handlers.writeSingleRegister(
+      frame(unitId, 6, [...word(address), ...word(value)]),
+      vector,
+      unitId,
+      callback
+    )
+
+const fc15 = (
+  vector: IServiceVector,
+  unitId: number,
+  address: number,
+  states: boolean[]
+): Frame => {
+  const bytes = Array.from({ length: Math.ceil(states.length / 8) }, (_, byte) =>
+    states
+      .slice(byte * 8, byte * 8 + 8)
+      .reduce((packed, state, bit) => packed | (state ? 1 << bit : 0), 0)
+  )
+  return (callback) =>
+    handlers.forceMultipleCoils(
+      frame(unitId, 15, [...word(address), ...word(states.length), bytes.length, ...bytes]),
+      vector,
+      unitId,
+      callback
+    )
+}
+
+const fc16 =
+  (vector: IServiceVector, unitId: number, address: number, values: number[]): Frame =>
+  (callback) =>
+    handlers.writeMultipleRegisters(
+      frame(unitId, 16, [
+        ...word(address),
+        ...word(values.length),
+        values.length * 2,
+        ...values.flatMap(word)
+      ]),
+      vector,
+      unitId,
+      callback
+    )
+
+/**
+ * Sends a frame and keeps every reply the handler hands over, in order. A
+ * request answered twice is two entries here, which `send` above folds into one.
+ */
+const sendKeepingEvery = (handle: Frame): Reply[] => {
+  const replies: Reply[] = []
+  handle((err, response) => {
+    if (err) replies.push({ exception: err.modbusErrorCode ?? SERVER_DEVICE_FAILURE })
+    else replies.push(response ? { data: response } : 'silence')
+  })
+  return replies
+}
+
+const DELAY_MS = 500
+
+const hostCoil = (unitId: UnitIdString, address: number, state: boolean) =>
+  registry.setBool({ uuid, unitId, registerType: 'coils', address, state })
+
+/** Each request shape a master can send, as one frame, with what it carries. */
+interface FaultCase {
+  name: string
+  direction: 'read' | 'write'
+  registerType: 'coils' | 'holding_registers' | 'input_registers'
+  /** The frame, to unit 1 at address 10. */
+  frame: (vector: IServiceVector) => Frame
+  /** What the request leaves at address 10 of unit 1 when it is written. */
+  written?: number | boolean
+  /** What address 10 of unit 1 held before. */
+  before?: number | boolean
+}
+
+const FAULT_CASES: FaultCase[] = [
+  {
+    name: 'a multi-word holding read (FC3)',
+    direction: 'read',
+    registerType: 'holding_registers',
+    frame: (vector) => fc3(vector, 1, 10, 3)
+  },
+  {
+    name: 'a one-word holding read (FC3)',
+    direction: 'read',
+    registerType: 'holding_registers',
+    frame: (vector) => fc3(vector, 1, 10, 1)
+  },
+  {
+    name: 'a multi-word input read (FC4)',
+    direction: 'read',
+    registerType: 'input_registers',
+    frame: (vector) => fc4(vector, 1, 10, 3)
+  },
+  {
+    name: 'a bit read (FC1)',
+    direction: 'read',
+    registerType: 'coils',
+    frame: (vector) => fc1(vector, 1, 10, 3)
+  },
+  {
+    name: 'a single-register write (FC6)',
+    direction: 'write',
+    registerType: 'holding_registers',
+    frame: (vector) => fc6(vector, 1, 10, 4242),
+    before: 7,
+    written: 4242
+  },
+  {
+    name: 'a multi-register write (FC16)',
+    direction: 'write',
+    registerType: 'holding_registers',
+    frame: (vector) => fc16(vector, 1, 10, [4242, 4343]),
+    before: 7,
+    written: 4242
+  },
+  {
+    name: 'a single-coil write (FC5)',
+    direction: 'write',
+    registerType: 'coils',
+    frame: (vector) => fc5(vector, 1, 10, false),
+    before: true,
+    written: false
+  },
+  {
+    name: 'a multi-coil write (FC15)',
+    direction: 'write',
+    registerType: 'coils',
+    frame: (vector) => fc15(vector, 1, 10, [false, true]),
+    before: true,
+    written: false
+  }
+]
+
+/** What address 10 of unit 1 holds now. */
+const heldAt10 = (registerType: FaultCase['registerType']) =>
+  registry.read(uuid, '1', registerType, 10)
+
+describe.each<ServerTransport>(['tcp', 'rtu'])('fault rules on %s', (transport) => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    hostRegister('1', 10, 7)
+    hostCoil('1', 10, true)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  describe.each(FAULT_CASES)('$name', (shape) => {
+    it('answers the rule’s exception once, and writes nothing', async () => {
+      faults.set(uuid, [{ action: { kind: 'exception', code: 6 } }])
+
+      const replies = sendKeepingEvery(shape.frame(vectorOn(transport)))
+      await vi.advanceTimersByTimeAsync(DELAY_MS * 4)
+
+      expect(replies).toEqual([{ exception: 6 }])
+      if (shape.before !== undefined) expect(heldAt10(shape.registerType)).toBe(shape.before)
+      expect(requests()).toEqual([
+        expect.objectContaining({
+          direction: shape.direction,
+          outcome: 'exception',
+          exceptionCode: 6,
+          fault: { rule: 0 }
+        })
+      ])
+    })
+
+    it('answers nothing for no_response, ever, and writes nothing', async () => {
+      faults.set(uuid, [{ action: { kind: 'no_response' } }])
+
+      const replies = sendKeepingEvery(shape.frame(vectorOn(transport)))
+      await vi.advanceTimersByTimeAsync(DELAY_MS * 4)
+
+      expect(replies).toEqual([])
+      if (shape.before !== undefined) expect(heldAt10(shape.registerType)).toBe(shape.before)
+      expect(requests()).toEqual([
+        expect.objectContaining({ outcome: 'no_response', fault: { rule: 0 } })
+      ])
+    })
+
+    it('answers a delay once and only after the delay, having read or written as usual', async () => {
+      faults.set(uuid, [{ action: { kind: 'delay', ms: DELAY_MS } }])
+
+      const replies = sendKeepingEvery(shape.frame(vectorOn(transport)))
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Written when the request arrived, before the reply goes out.
+      if (shape.written !== undefined) expect(heldAt10(shape.registerType)).toBe(shape.written)
+      expect(replies).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(DELAY_MS - 1)
+      expect(replies).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(replies).toEqual([{ data: expect.any(Buffer) }])
+
+      await vi.advanceTimersByTimeAsync(DELAY_MS * 4)
+      expect(replies).toHaveLength(1)
+      expect(requests()).toEqual([
+        expect.objectContaining({ outcome: 'ok', fault: { rule: 0, delayMs: DELAY_MS } })
+      ])
+    })
+
+    it('answers as usual where no rule matches, and records no fault', async () => {
+      faults.set(uuid, [{ unitId: 2, action: { kind: 'no_response' } }])
+
+      const replies = sendKeepingEvery(shape.frame(vectorOn(transport)))
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(replies).toEqual([{ data: expect.any(Buffer) }])
+      if (shape.written !== undefined) expect(heldAt10(shape.registerType)).toBe(shape.written)
+      expect(requests()).toEqual([expect.objectContaining({ outcome: 'ok' })])
+      expect(requests()[0]).not.toHaveProperty('fault')
+    })
+  })
+
+  it('answers the words a delayed read holds', async () => {
+    hostRegister('1', 12, 9)
+    faults.set(uuid, [{ action: { kind: 'delay', ms: DELAY_MS } }])
+
+    const replies = sendKeepingEvery(fc3(vectorOn(transport), 1, 10, 3))
+    await vi.advanceTimersByTimeAsync(DELAY_MS)
+
+    const [reply] = replies
+    expect(reply && wordsOf(reply)).toEqual([7, 0, 9])
+  })
+
+  it('answers the bits a delayed read holds', async () => {
+    hostCoil('1', 12, true)
+    faults.set(uuid, [{ action: { kind: 'delay', ms: DELAY_MS } }])
+
+    const replies = sendKeepingEvery(fc1(vectorOn(transport), 1, 10, 3))
+    await vi.advanceTimersByTimeAsync(DELAY_MS)
+
+    const [reply] = replies
+    expect(reply && bitsOf(reply, 3)).toEqual([true, false, true])
+  })
+
+  it('delays the server’s own exception as well', async () => {
+    faults.set(uuid, [{ action: { kind: 'delay', ms: DELAY_MS } }])
+
+    const replies = sendKeepingEvery(fc3(vectorOn(transport), 1, 65534, 3))
+    await vi.advanceTimersByTimeAsync(DELAY_MS - 1)
+    expect(replies).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(replies).toEqual([{ exception: ILLEGAL_DATA_ADDRESS }])
+  })
+
+  it('writes nothing of a multi-register write a rule refuses, though its first address is outside the range', async () => {
+    hostRegister('1', 9, 5)
+    faults.set(uuid, [{ addressRange: [10, 10], action: { kind: 'exception', code: 6 } }])
+
+    const replies = sendKeepingEvery(fc16(vectorOn(transport), 1, 9, [1, 2]))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(replies).toEqual([{ exception: 6 }])
+    expect(registry.read(uuid, '1', 'holding_registers', 9)).toBe(5)
+    expect(registry.read(uuid, '1', 'holding_registers', 10)).toBe(7)
+  })
+
+  it('names the rule that decided, by its place in the list', async () => {
+    faults.set(uuid, [
+      { unitId: 2, action: { kind: 'no_response' } },
+      { registerType: 'holding_registers', action: { kind: 'exception', code: 5 } }
+    ])
+
+    await vi.advanceTimersByTimeAsync(0)
+    sendKeepingEvery(fc3(vectorOn(transport), 1, 10, 2))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(requests()).toEqual([expect.objectContaining({ exceptionCode: 5, fault: { rule: 1 } })])
+  })
+
+  it('applies a rule to a unit the server does not host, ahead of the server’s own answer', async () => {
+    faults.set(uuid, [{ unitId: 5, action: { kind: 'exception', code: 6 } }])
+
+    const replies = sendKeepingEvery(fc3(vectorOn(transport), 5, 10, 2))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(replies).toEqual([{ exception: 6 }])
+  })
+
+  it('leaves a zero-length FC16 to the handler’s own exception, answered once', async () => {
+    faults.set(uuid, [{ action: { kind: 'delay', ms: DELAY_MS } }])
+
+    const replies = sendKeepingEvery(fc16(vectorOn(transport), 1, 10, []))
+    await vi.advanceTimersByTimeAsync(DELAY_MS * 4)
+
+    expect(replies).toEqual([{ exception: ILLEGAL_DATA_ADDRESS }])
+    expect(requests()[0]).not.toHaveProperty('fault')
+  })
+
+  it('answers exception 4 to a delayed callback that throws, once', async () => {
+    faults.set(uuid, [{ action: { kind: 'delay', ms: DELAY_MS } }])
+    const { getHoldingRegister } = vectorOn(transport)
+    if (!getHoldingRegister) throw new Error('the vector has no getHoldingRegister')
+    const cb = vi.fn((err: Error | null) => {
+      if (!err) throw new Error('the frame could not be written')
+    })
+
+    getHoldingRegister(10, 1, cb)
+    await vi.advanceTimersByTimeAsync(DELAY_MS)
+
+    expect(cb).toHaveBeenNthCalledWith(1, null, 7)
+    expect(cb).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ modbusErrorCode: SERVER_DEVICE_FAILURE }),
+      0
+    )
+    expect(cb).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('fault rules and an RTU broadcast', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    hostRegister('1', 10, 7)
+    hostRegister('2', 10, 7)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('writes nothing of a broadcast an exception rule decides, and answers nothing', async () => {
+    faults.set(uuid, [{ action: { kind: 'exception', code: 6 } }])
+
+    const replies = sendKeepingEvery(fc16(vectorOn('rtu'), 0, 10, [41]))
+    await vi.advanceTimersByTimeAsync(DELAY_MS * 4)
+
+    expect(replies).toEqual([])
+    expect(registry.read(uuid, '1', 'holding_registers', 10)).toBe(7)
+    expect(requests()).toEqual([
+      expect.objectContaining({ unitId: 0, outcome: 'no_response', fault: { rule: 0 } })
+    ])
+  })
+
+  it('writes nothing of a broadcast a no_response rule decides', async () => {
+    faults.set(uuid, [{ action: { kind: 'no_response' } }])
+
+    const replies = sendKeepingEvery(fc15(vectorOn('rtu'), 0, 10, [true]))
+    await vi.advanceTimersByTimeAsync(DELAY_MS * 4)
+
+    expect(replies).toEqual([])
+    expect(registry.read(uuid, '1', 'coils', 10)).toBeUndefined()
+  })
+
+  it('writes a broadcast a delay rule decides, and still answers nothing', async () => {
+    faults.set(uuid, [{ action: { kind: 'delay', ms: DELAY_MS } }])
+
+    const replies = sendKeepingEvery(fc16(vectorOn('rtu'), 0, 10, [41]))
+    await vi.advanceTimersByTimeAsync(DELAY_MS * 4)
+
+    expect(replies).toEqual([])
+    expect(registry.read(uuid, '1', 'holding_registers', 10)).toBe(41)
+    expect(registry.read(uuid, '2', 'holding_registers', 10)).toBe(41)
+    expect(requests()).toEqual([
+      expect.objectContaining({ unitId: 0, outcome: 'ok', fault: { rule: 0 } })
+    ])
   })
 })

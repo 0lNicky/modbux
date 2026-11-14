@@ -319,6 +319,10 @@ export const initIpc: InitIpcFn = (app, state, client, server, windows, mcp) => 
   ipcHandle('set_mcp_allow_writes', (_, allowWrites) => mcp.setAllowWrites(allowWrites))
   ipcHandle('regenerate_mcp_token', () => mcp.regenerateToken())
 
+  // Fault rules (set over MCP; a window shows and clears them)
+  ipcHandle('get_server_faults', () => server.allFaults())
+  ipcHandle('clear_server_faults', (_, uuid) => server.clearFaults(uuid), ServerUuidSchema)
+
   // Serial port discovery
   ipcHandle('list_serial_ports', () => client.listSerialPorts())
   ipcHandle('validate_serial_port', (_, portPath) => client.validateSerialPort(portPath))
