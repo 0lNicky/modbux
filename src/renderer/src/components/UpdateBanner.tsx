@@ -31,7 +31,7 @@ const UpdateBanner = meme((): JSX.Element | null => {
 
         // Fetch latest release from GitHub API
         const response = await fetch(
-          'https://api.github.com/repos/fengchyunbih/modbux/releases/latest',
+          'https://api.github.com/repos/0lNicky/modbux/releases/latest',
           {
             headers: {
               Accept: 'application/vnd.github.v3+json'

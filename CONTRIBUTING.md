@@ -8,7 +8,7 @@ waiting for a reviewer.
 ## This fork
 
 The rules below came from upstream (`ploxc/modbux`). This fork (`origin`,
-`fengchyunbih/modbux`) works as follows, and where it differs from the rest of
+`0lNicky/modbux`) works as follows, and where it differs from the rest of
 this file, this section wins.
 
 - **No upstream contributions by default.** The owner says when a change goes
@@ -356,7 +356,7 @@ generic driver claims the device. Every `test:all:*` ends with this round, and
 
 ## Reporting bugs
 
-Use the [bug report template](https://github.com/fengchyunbih/modbux/issues/new?template=bug_report.md). Include:
+Use the [bug report template](https://github.com/0lNicky/modbux/issues/new?template=bug_report.md). Include:
 
 - Modbux version
 - OS and version
@@ -366,7 +366,7 @@ Use the [bug report template](https://github.com/fengchyunbih/modbux/issues/new?
 
 ## Feature requests
 
-Use the [feature request template](https://github.com/fengchyunbih/modbux/issues/new?template=feature_request.md). Explain the problem you're solving, not just the solution you want.
+Use the [feature request template](https://github.com/0lNicky/modbux/issues/new?template=feature_request.md). Explain the problem you're solving, not just the solution you want.
 
 ## License
 

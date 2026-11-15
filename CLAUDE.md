@@ -26,7 +26,7 @@ src/renderer/  the React UI
 
 # Branches and releases
 
-This is a fork (`origin`, `fengchyunbih/modbux`) of `ploxc/modbux` (`upstream`).
+This is a fork (`origin`, `0lNicky/modbux`) of `ploxc/modbux` (`upstream`).
 Nothing here is contributed upstream until the owner says so.
 
 - `main` is this fork's trunk, and it holds what has been released.
