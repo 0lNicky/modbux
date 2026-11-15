@@ -30,11 +30,14 @@ const UpdateBanner = meme((): JSX.Element | null => {
         if (dismissed) return
 
         // Fetch latest release from GitHub API
-        const response = await fetch('https://api.github.com/repos/ploxc/modbux/releases/latest', {
-          headers: {
-            Accept: 'application/vnd.github.v3+json'
+        const response = await fetch(
+          'https://api.github.com/repos/fengchyunbih/modbux/releases/latest',
+          {
+            headers: {
+              Accept: 'application/vnd.github.v3+json'
+            }
           }
-        })
+        )
 
         if (!response.ok) {
           // If API call fails, silently fail (don't show banner)

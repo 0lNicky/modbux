@@ -30,7 +30,7 @@ test.describe.serial('Home screen and navigation', () => {
 
   test('version link points to modbux github and shows version number', async ({ mainPage }) => {
     const versionLink = mainPage.getByTestId('home-version-link')
-    await expect(versionLink).toHaveAttribute('href', 'https://github.com/ploxc/modbux')
+    await expect(versionLink).toHaveAttribute('href', 'https://github.com/fengchyunbih/modbux')
     await expect(versionLink).toHaveAttribute('target', '_blank')
     const text = await versionLink.textContent()
     expect(text).toMatch(/\d+\.\d+\.\d+/)
