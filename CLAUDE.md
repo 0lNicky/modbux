@@ -26,20 +26,21 @@ src/renderer/  the React UI
 
 # Branches and releases
 
-This is a fork (`origin`, `fengchyunbih/modbux`) of `ploxc/modbux` (`upstream`).
+This is a fork (`origin`, `0lNicky/modbux`) of `ploxc/modbux` (`upstream`).
 Nothing here is contributed upstream until the owner says so.
 
-- `main` mirrors `upstream/main`. Do not commit to it, and do not branch from it.
-- `icp` is this fork's trunk, and it holds what has been released.
+- `main` is this fork's trunk, and it holds what has been released.
+- `upstream/main` is the only copy of upstream. No branch here mirrors it.
 - `develop` is where work lands. Branch from `develop`, open the PR into
-  `develop`, and open it on `origin`. The owner merges `develop` into `icp` for a
+  `develop`, and open it on `origin`. The owner merges `develop` into `main` for a
   release.
-- A release bumps `version` in `package.json` to `X.Y.Z-icp.N` on `icp`, commits
+- A release bumps `version` in `package.json` to `X.Y.Z-icp.N` on `main`, commits
   it as `chore: release X.Y.Z-icp.N`, and pushes the tag `vX.Y.Z-icp.N`. The tag
   triggers `.github/workflows/release.yml`. `N` restarts at 1 when upstream's
   `X.Y.Z` changes.
-- Syncing upstream: fast-forward `main` to `upstream/main`, then merge `main`
-  into `icp`.
+- Syncing upstream: `git fetch upstream`, then merge `upstream/main` into `main`.
+  Do not press GitHub's "Sync fork" button: its "Discard commits" option drops
+  every commit this fork has.
 
 # What breaks if you do not know it
 

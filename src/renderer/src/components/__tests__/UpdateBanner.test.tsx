@@ -34,7 +34,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.4.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.4.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.4.0'
       })
     })
 
@@ -51,7 +51,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
       })
     })
 
@@ -65,7 +65,7 @@ describe('UpdateBanner', () => {
     expect(screen.getByText(/Version 1.5.0 is now available/)).toBeInTheDocument()
     expect(screen.getByTestId('update-banner-link')).toHaveAttribute(
       'href',
-      'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+      'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
     )
   })
 
@@ -75,7 +75,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
       })
     })
 
@@ -92,7 +92,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: '1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/1.5.0'
       })
     })
 
@@ -109,7 +109,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
       })
     })
 
@@ -126,7 +126,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
       })
     })
 
@@ -144,7 +144,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
       })
     })
 
@@ -171,7 +171,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
       })
     })
 
@@ -222,7 +222,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
       })
     })
 
@@ -238,7 +238,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
       })
     })
 
@@ -257,7 +257,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.5.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.5.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.5.0'
       })
     })
 
@@ -278,7 +278,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.4.1',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.4.1'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.4.1'
       })
     })
 
@@ -295,7 +295,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v1.4.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v1.4.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v1.4.0'
       })
     })
 
@@ -312,7 +312,7 @@ describe('UpdateBanner', () => {
       ok: true,
       json: async () => ({
         tag_name: 'v2.0.0',
-        html_url: 'https://github.com/ploxc/modbux/releases/tag/v2.0.0'
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v2.0.0'
       })
     })
 
@@ -321,5 +321,25 @@ describe('UpdateBanner', () => {
     await waitFor(() => {
       expect(screen.getByTestId('update-banner')).toBeInTheDocument()
     })
+  })
+
+  it('asks the fork for its latest release, not upstream', async () => {
+    mockGetAppVersion.mockResolvedValue('2.3.0-icp.2')
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        tag_name: 'v2.3.0-icp.3',
+        html_url: 'https://github.com/0lNicky/modbux/releases/tag/v2.3.0-icp.3'
+      })
+    })
+
+    render(<UpdateBanner />)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Version 2.3.0-icp.3 is now available/)).toBeInTheDocument()
+    })
+    expect(mockFetch.mock.calls[0]?.[0]).toBe(
+      'https://api.github.com/repos/0lNicky/modbux/releases/latest'
+    )
   })
 })

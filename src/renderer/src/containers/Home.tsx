@@ -159,7 +159,7 @@ const Version = meme((): JSX.Element => {
       data-testid="home-version-link"
       aria-label="Modbux GitHub"
       component={'a'}
-      href="https://github.com/ploxc/modbux"
+      href="https://github.com/0lNicky/modbux"
       target="_blank"
       sx={{ right: 16, ...bottomElementsCommonSx }}
     >

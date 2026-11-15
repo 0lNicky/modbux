@@ -2,20 +2,20 @@
 
 [English](./README.en.md) | 正體中文
 
-> 本專案 Fork 自 [ploxc](https://github.com/ploxc) 開發的 [ploxc/modbux](https://github.com/ploxc/modbux)，新增了 MCP 伺服器，讓 AI 代理程式可直接操控 Client 與 Server。
+> 本專案 Fork 自 [ploxc](https://github.com/ploxc) 開發的 [ploxc/modbux](https://github.com/ploxc/modbux)。
 
 ## 交由 AI 代理程式安裝
 
 將以下內容貼入 Claude Code、Codex、Antigravity 或任何可執行 shell 指令的代理程式：
 
 ````text
-Install Modbux from its latest release at https://github.com/fengchyunbih/modbux/releases
+Install Modbux from its latest release at https://github.com/0lNicky/modbux/releases
 and connect it to yourself as an MCP server. Do these in order, and stop at step 2.
 Do not build from source.
 
 1. Download the installer for my OS and CPU from the latest release, and install it:
    macOS .dmg (arm64 for Apple silicon, x64 for Intel), Windows x64-setup.exe, Linux
-   .deb or .AppImage. For example: gh release download -R fengchyunbih/modbux --pattern "*arm64.dmg"
+   .deb or .AppImage. For example: gh release download -R 0lNicky/modbux --pattern "*arm64.dmg"
    If macOS says the app is damaged, tell me; I open it with right-click, Open.
    Then start Modbux.
 2. Ask me to open the Modbux window, press the settings button on the Home screen,
@@ -45,18 +45,18 @@ Do not build from source.
 
 <img src="./resources/icon.png" alt="Logo" width="60" />
 
-[![Release](https://img.shields.io/github/v/release/fengchyunbih/modbux?color=5b9279)](https://github.com/fengchyunbih/modbux/releases)
-[![Downloads](https://img.shields.io/github/downloads/fengchyunbih/modbux/total?color=5b9279&label=downloads)](https://github.com/fengchyunbih/modbux/releases)
-[![License](https://img.shields.io/github/license/fengchyunbih/modbux?color=5b9279)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/0lNicky/modbux?color=5b9279)](https://github.com/0lNicky/modbux/releases)
+[![Downloads](https://img.shields.io/github/downloads/0lNicky/modbux/total?color=5b9279&label=downloads)](https://github.com/0lNicky/modbux/releases)
+[![License](https://img.shields.io/github/license/0lNicky/modbux?color=5b9279)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5b9279)
 
 ## 適用於 Windows、macOS 與 Linux 的開源 Modbus Client 與 Server 模擬工具
 
-**Modbux 是我四年前迫切需要的工具。** 它在單一應用程式中支援 Modbus TCP、RTU 與 RTU over TCP，可為暫存器指定資料型別、掃描位址與資料、模擬測試用伺服器，並讓你真正看懂所讀到的數值。
+Modbux 在單一應用程式中支援 Modbus TCP、RTU 與 RTU over TCP，可為暫存器指定資料型別、掃描位址與資料、模擬測試用伺服器，並讓你真正看懂所讀到的數值。
 
 ## 下載
 
-**[下載最新版本](https://github.com/fengchyunbih/modbux/releases/latest)**
+**[下載最新版本](https://github.com/0lNicky/modbux/releases/latest)**
 
 提供 Windows 安裝檔、macOS（Apple Silicon 與 Intel）安裝映像檔，以及 Linux 的 `.deb` 與 `.AppImage`（x64 與 arm64）。
 
@@ -112,55 +112,9 @@ Do not build from source.
 - Client 與 Server 的設定（連線、讀取設定、點位對應表、伺服器與暫存器）會在關閉與重新啟動之間自動保留
 - 連線與輪詢狀態、讀到的數值、通訊紀錄、故障規則與 Undo 歷史則不會保存，詳見[使用手冊第 7 章](docs/manual/README.md#7-狀態保存與復原persistence--undoredo)
 
-## 工具比較
-
-市面上的 Modbus 工具不少，其中幾款在各自領域表現不俗。問題在於每套工具往往只做其中一件事，而且好用的多半是付費且僅支援 Windows：Client 一套、Server 一套、掃描器又是另一套。我過去好幾年都得在這些視窗之間來回切換。
-
-Modbux 免費開源，支援 Windows、macOS 與 Linux，並將 Client 與 Server 整合在同一個應用程式裡，讓你直接連向 `127.0.0.1` 測試，手邊不需要任何硬體。我開發它最核心的理由是資料解讀能力：對同一批暫存器同時套用所有資料型別、隨時切換位元組順序、套用縮放換算，以及能找出哪個 Unit ID 有回應、甚至直接掃出資料位址落在哪裡的掃描器。
-
-若想逐一比較各款工具，請參閱上游網站的[工具比較頁面](https://ploxc.com/modbux/alternatives)。
-
 ## 介面預覽
 
 ![Modbux Client UI](./resources/modbux-client.png)
-
-## 為什麼會有這套工具
-
-四年前，我在完全沒有 Modbus 經驗的情況下被派去執行汽電共生廠（CHP）的試車。客戶不知道點位位址，我也不懂通訊協定。手邊只有一套掃描出「某些東西」的掃描器，以及一個只會顯示十六進位數值、卻無法幫我解讀意義的讀取工具。
-
-_溫度到底在暫存器 100 還是 101？說明書是從 0 還是從 1 開始算？為什麼手冊寫 Holding Register 0，TIA Portal 卻叫它 40000？它是 big-endian 還是 little-endian？是 Input Registers 還是 Holding Registers？我到底該用哪個 Function Code？_
-
-而且現場還是 Modbus RTU，所以清單上還得加上「終端電阻裝對了嗎？」與「接線真的沒接反嗎？」。因為只要其中一項不對，就完全讀不到任何東西，只能盲目除錯。
-
-**這種情況持續了四年。**
-
-後來我逐漸摸透了，但卻看著同事們一個接一個撞上同樣的牆。我們最後當然還是能完成任務，但代價是無數心血與太多趟現場出差。手邊的工具運氣好時能讀出一個 float 或 int，卻從來無法呈現全貌。位元組順序不對？自己交換暫存器碰運氣吧。說明書位址偏移寫錯？祝你好運找到資料真正存放的位置。
-
-到了 Modbus TCP，至少實體層不再處處與你作對。我用 [modbus-serial](https://www.npmjs.com/package/modbus-serial)（感謝 [yaacov](https://github.com/yaacov)！）為自家的太陽能板寫了一套 TypeScript 程式，事情才開始豁然開朗。一旦理解之後，這套通訊協定本身其實非常直觀。
-
-接著又是一場試車。更多問題、更多挫折。我終於受不了了。
-
-**「我受夠了。」**
-
-我決定徹底鑽研這套協定，把每個細節弄懂，然後發現：我手邊已經有所有需要的拼圖了。我知道它怎麼運作，我可以親手做出這幾年來一直希望存在的工具。
-
-於是我動手做了。
-
-我做出了一套能同時顯示所有可能資料型別解讀結果的工具；一套不只掃描設備、更能直接掃描出「實際資料位址在哪裡」的工具（因為我曾花了好幾個小時才發現第三方說明書寫錯了暫存器範圍）；一套能讓你去現場之前，先在辦公室用模擬設備驗證 PLC 程式的工具。
-
-我現在每天都在用它。寫好 Modbus 程式卻只能「祈禱」到現場連上設備時能正常運作？我再也不用那種方式工作了。
-
-**如果你曾經與 Modbus 苦戰過，你就會明白為什麼需要這套工具。**
-
-以 Electron、React 與 Material-UI 打造。之所以開源，是因為這個產業需要更好的工具。
-
-### 免費，且維持免費
-
-無須註冊帳號、無試用期限制、無付費版本。
-
-## 為什麼叫「Modbux」？
-
-這是我自己常打錯的字——把 _modbus_ 打成 _modbux_。但這個名字剛好契合：它代表你在操作 Modbus 時的使用者體驗（UX）。這個錯字就成了品牌名稱。
 
 ## 實用技巧：讓 AI 處理繁瑣設定
 
@@ -170,13 +124,13 @@ _溫度到底在暫存器 100 還是 101？說明書是從 0 還是從 1 開始�
 
 ### Windows
 
-從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.exe` 安裝檔。
+從 [releases](https://github.com/0lNicky/modbux/releases) 下載 `.exe` 安裝檔。
 
 ⚠️ **SmartScreen 警告**：點擊「其他資訊」（More info）→「仍要執行」（Run anyway）
 
 ### macOS
 
-從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.dmg` 檔案。Apple Silicon 請選擇 `arm64`，Intel 請選擇 `x64`。
+從 [releases](https://github.com/0lNicky/modbux/releases) 下載 `.dmg` 檔案。Apple Silicon 請選擇 `arm64`，Intel 請選擇 `x64`。
 
 **需 macOS 12 以上版本。** Modbux 2.3 升級至 Electron 41，不再支援 Catalina 或 Big Sur。Modbux 2.2.1 仍支援舊版系統，並保留於[上游 releases 頁面](https://github.com/ploxc/modbux/releases)。
 
@@ -184,7 +138,7 @@ _溫度到底在暫存器 100 還是 101？說明書是從 0 還是從 1 開始�
 
 ### Linux
 
-從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.deb` 或 `.AppImage`（支援 x64 與 arm64）。亦可從原始碼建置，請參閱[自行建置](#自行建置)。
+從 [releases](https://github.com/0lNicky/modbux/releases) 下載 `.deb` 或 `.AppImage`（支援 x64 與 arm64）。亦可從原始碼建置，請參閱[自行建置](#自行建置)。
 
 在 Linux 上有兩項功能需要應用程式無法自行取得的系統權限，Modbux 會主動彈出提示詢問，而非默默失敗：
 
@@ -207,7 +161,7 @@ Modbux 是使用 React、TypeScript 與 Material-UI 建構的 Electron 應用程
 **複製儲存庫並安裝相依套件：**
 
 ```bash
-git clone https://github.com/fengchyunbih/modbux.git
+git clone https://github.com/0lNicky/modbux.git
 cd modbux
 yarn
 ```
@@ -310,7 +264,7 @@ yarn build:linux
 
 ## 參與貢獻
 
-本 Fork 儲存庫已關閉 Issues 功能。請針對 [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux) 的 `develop` 分支提出 Pull Request，相關規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。若為上游應用程式本身的錯誤，請回報至 [ploxc/modbux](https://github.com/ploxc/modbux/issues)。
+回報錯誤或提出功能需求，請至 [0lNicky/modbux](https://github.com/0lNicky/modbux/issues) 開 Issue。要貢獻程式碼，請針對 `develop` 分支提出 Pull Request，相關規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 授權條款
 

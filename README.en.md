@@ -2,20 +2,20 @@
 
 English | [正體中文](./README.md)
 
-> A fork of [ploxc/modbux](https://github.com/ploxc/modbux) by [ploxc](https://github.com/ploxc). It adds an MCP server, so an AI agent can drive the client and the server.
+> A fork of [ploxc/modbux](https://github.com/ploxc/modbux) by [ploxc](https://github.com/ploxc).
 
 ## Let an AI agent install it
 
 Paste this into Claude Code, Codex, Antigravity or any agent that can run shell commands:
 
 ````text
-Install Modbux from its latest release at https://github.com/fengchyunbih/modbux/releases
+Install Modbux from its latest release at https://github.com/0lNicky/modbux/releases
 and connect it to yourself as an MCP server. Do these in order, and stop at step 2.
 Do not build from source.
 
 1. Download the installer for my OS and CPU from the latest release, and install it:
    macOS .dmg (arm64 for Apple silicon, x64 for Intel), Windows x64-setup.exe, Linux
-   .deb or .AppImage. For example: gh release download -R fengchyunbih/modbux --pattern "*arm64.dmg"
+   .deb or .AppImage. For example: gh release download -R 0lNicky/modbux --pattern "*arm64.dmg"
    If macOS says the app is damaged, tell me; I open it with right-click, Open.
    Then start Modbux.
 2. Ask me to open the Modbux window, press the settings button on the Home screen,
@@ -45,18 +45,18 @@ The details are in [docs/mcp.md](docs/mcp.md) and the [user manual (正體中文
 
 <img src="./resources/icon.png" alt="Logo" width="60" />
 
-[![Release](https://img.shields.io/github/v/release/fengchyunbih/modbux?color=5b9279)](https://github.com/fengchyunbih/modbux/releases)
-[![Downloads](https://img.shields.io/github/downloads/fengchyunbih/modbux/total?color=5b9279&label=downloads)](https://github.com/fengchyunbih/modbux/releases)
-[![License](https://img.shields.io/github/license/fengchyunbih/modbux?color=5b9279)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/0lNicky/modbux?color=5b9279)](https://github.com/0lNicky/modbux/releases)
+[![Downloads](https://img.shields.io/github/downloads/0lNicky/modbux/total?color=5b9279&label=downloads)](https://github.com/0lNicky/modbux/releases)
+[![License](https://img.shields.io/github/license/0lNicky/modbux?color=5b9279)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5b9279)
 
 ## An Open Source Modbus Client & Server Simulation Tool for Windows, macOS and Linux
 
-**Modbux is the tool I desperately needed four years ago.** It handles Modbus TCP, RTU and RTU over TCP, lets you assign datatypes to registers, scan for addresses and data, simulate servers for testing, and actually _understand_ what you're reading, all in one app.
+Modbux handles Modbus TCP, RTU and RTU over TCP, lets you assign datatypes to registers, scan for addresses and data, simulate servers for testing, and actually _understand_ what you're reading, all in one app.
 
 ## Download
 
-**[Download the latest release](https://github.com/fengchyunbih/modbux/releases/latest)**
+**[Download the latest release](https://github.com/0lNicky/modbux/releases/latest)**
 
 Installers for Windows, and for macOS on both Apple silicon and Intel. Linux gets a `.deb`
 and an `.AppImage`, x64 and arm64.
@@ -115,63 +115,9 @@ and an `.AppImage`, x64 and arm64.
 - Client and server configuration (connection, read settings, register mapping, servers and their registers) saves automatically between sessions
 - Connection and polling state, read values, the transaction log, fault rules and undo history do not; see chapter 7 of the [user manual](docs/manual/README.md)
 
-## How It Compares
-
-There are plenty of Modbus tools around and several of them are good at what they do. The
-catch is that they each do one piece of it, and the good ones are paid and Windows-only:
-a client here, a server there, a scanner separately. I used those for years, switching
-between windows.
-
-Modbux is free and open source, runs on Windows, macOS and Linux, and puts the client and
-the server in one app, so you can point one at the other over `127.0.0.1` and test without
-any hardware in front of you. The part I actually built it for is the interpretation:
-every data type applied to the same registers at once, endianness you can flip, scaling,
-and a scan that tells you where the data is instead of only which unit answered.
-
-If you want it laid out tool by tool, there is a
-[comparison page](https://ploxc.com/modbux/alternatives) on the upstream site.
-
 ## UI
 
 ![Modbux Client UI](./resources/modbux-client.png)
-
-## Why This Exists
-
-Four years ago, I was thrown into a CHP plant commissioning with zero Modbus experience. The client didn't know the addresses. I didn't know the protocol. I had a scanner that found... something... and a hex reader that showed me values I couldn't interpret.
-
-_Is that temperature in register 100 or 101? Does the documentation start at 0 or 1? Why does TIA Portal call it 40000 when the manual says holding register 0? Is it big-endian or little-endian? Input registers or holding registers? Which function code do I even need?_
-
-Oh, and it was Modbus RTU, so add "are my termination resistors right?" and "is my wiring actually correct?" to the list. Because if those aren't perfect, you're reading absolutely nothing and troubleshooting blind.
-
-**This went on for four years.**
-
-Gradually, I figured it out. But I watched colleague after colleague hit the same walls. We'd eventually succeed, sure, with blood, sweat, and way too many site visits. The tools we had could read a float or an int if you were lucky, but they never gave you the full picture. Endianness? Swap the registers yourself and hope. Documentation starting at the wrong offset? Good luck finding where the data actually lives.
-
-Modbus TCP helped, at least the physical layer wasn't fighting you anymore. I built a TypeScript implementation for my home solar panels using [modbus-serial](https://www.npmjs.com/package/modbus-serial) (thanks [yaacov](https://github.com/yaacov)!), and things started clicking. The protocol itself actually made sense once you understood it.
-
-Then came another commissioning. More problems. More frustration. And I snapped.
-
-**"I've had enough of this."**
-
-I dove into the protocol properly, really _understood_ it, and realized: I already have the pieces. I know how this works now. I can build the tool I've been wishing existed this entire time.
-
-So I did.
-
-I built something that shows you every possible data interpretation at once. That scans not just for devices, but for _where the actual data is_ (because I once spent hours discovering third-party documentation had the wrong register range). That lets you test PLC implementations against simulated devices _before_ you're on-site hoping everything works.
-
-I use it every single day now. The idea of writing Modbus code and just _hoping_ it works when I connect to the real device? That's not how I work anymore.
-
-**If you've ever fought with Modbus, you'll understand why this needed to exist.**
-
-Built with Electron, React, and Material-UI. Open source because this industry needs better tools.
-
-### Free, and Staying Free
-
-No account, no trial, no paid tier.
-
-## Why "Modbux"?
-
-It's a typo I always made, _modbux_ instead of _modbus_. But it fits: it's your user experience (UX) working with Modbus. The typo became the brand.
 
 ## Pro Tip: Let AI Do the Boring Stuff
 
@@ -181,13 +127,13 @@ Saved configs are JSON. Show Claude or ChatGPT a few example registers, paste yo
 
 ### Windows
 
-Download the `.exe` file from [releases](https://github.com/fengchyunbih/modbux/releases).
+Download the `.exe` file from [releases](https://github.com/0lNicky/modbux/releases).
 
 ⚠️ **SmartScreen warning**: Click "More info" → "Run anyway"
 
 ### macOS
 
-Download the `.dmg` file from [releases](https://github.com/fengchyunbih/modbux/releases). Pick `arm64` for Apple silicon and `x64` for Intel.
+Download the `.dmg` file from [releases](https://github.com/0lNicky/modbux/releases). Pick `arm64` for Apple silicon and `x64` for Intel.
 
 **macOS 12 or newer.** Modbux 2.3 moved to Electron 41, which does not run on Catalina or
 Big Sur. Modbux 2.2.1 still does, and stays on the [upstream releases page](https://github.com/ploxc/modbux/releases).
@@ -197,7 +143,7 @@ Big Sur. Modbux 2.2.1 still does, and stays on the [upstream releases page](http
 
 ### Linux
 
-Download the `.deb` or the `.AppImage` from [releases](https://github.com/fengchyunbih/modbux/releases), x64 or arm64. Building from source
+Download the `.deb` or the `.AppImage` from [releases](https://github.com/0lNicky/modbux/releases), x64 or arm64. Building from source
 works too, see [Build It Yourself](#build-it-yourself).
 
 Two things on Linux need a permission the app cannot give itself, and Modbux asks about
@@ -229,7 +175,7 @@ Modbux is an Electron application built with React, TypeScript, and Material-UI.
 **Clone and install dependencies:**
 
 ```bash
-git clone https://github.com/fengchyunbih/modbux.git
+git clone https://github.com/0lNicky/modbux.git
 cd modbux
 yarn
 ```
@@ -350,7 +296,7 @@ yarn build:linux
 
 ## Contributing
 
-This fork has issues disabled. Open a pull request into `develop` on [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux). See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules. A bug in the upstream app goes to [ploxc/modbux](https://github.com/ploxc/modbux/issues).
+Report a bug or request a feature in the [issues on 0lNicky/modbux](https://github.com/0lNicky/modbux/issues). To contribute code, open a pull request into `develop`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules.
 
 ## License
 
