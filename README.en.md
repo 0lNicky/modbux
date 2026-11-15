@@ -2,7 +2,7 @@
 
 English | [正體中文](./README.md)
 
-> A fork of [ploxc/modbux](https://github.com/ploxc/modbux) by [ploxc](https://github.com/ploxc). It adds an MCP server, so an AI agent can drive the client and the server.
+> A fork of [ploxc/modbux](https://github.com/ploxc/modbux) by [ploxc](https://github.com/ploxc).
 
 ## Let an AI agent install it
 
@@ -52,7 +52,7 @@ The details are in [docs/mcp.md](docs/mcp.md) and the [user manual (正體中文
 
 ## An Open Source Modbus Client & Server Simulation Tool for Windows, macOS and Linux
 
-**Modbux is the tool I desperately needed four years ago.** It handles Modbus TCP, RTU and RTU over TCP, lets you assign datatypes to registers, scan for addresses and data, simulate servers for testing, and actually _understand_ what you're reading, all in one app.
+Modbux handles Modbus TCP, RTU and RTU over TCP, lets you assign datatypes to registers, scan for addresses and data, simulate servers for testing, and actually _understand_ what you're reading, all in one app.
 
 ## Download
 
@@ -115,63 +115,9 @@ and an `.AppImage`, x64 and arm64.
 - Client and server configuration (connection, read settings, register mapping, servers and their registers) saves automatically between sessions
 - Connection and polling state, read values, the transaction log, fault rules and undo history do not; see chapter 7 of the [user manual](docs/manual/README.md)
 
-## How It Compares
-
-There are plenty of Modbus tools around and several of them are good at what they do. The
-catch is that they each do one piece of it, and the good ones are paid and Windows-only:
-a client here, a server there, a scanner separately. I used those for years, switching
-between windows.
-
-Modbux is free and open source, runs on Windows, macOS and Linux, and puts the client and
-the server in one app, so you can point one at the other over `127.0.0.1` and test without
-any hardware in front of you. The part I actually built it for is the interpretation:
-every data type applied to the same registers at once, endianness you can flip, scaling,
-and a scan that tells you where the data is instead of only which unit answered.
-
-If you want it laid out tool by tool, there is a
-[comparison page](https://ploxc.com/modbux/alternatives) on the upstream site.
-
 ## UI
 
 ![Modbux Client UI](./resources/modbux-client.png)
-
-## Why This Exists
-
-Four years ago, I was thrown into a CHP plant commissioning with zero Modbus experience. The client didn't know the addresses. I didn't know the protocol. I had a scanner that found... something... and a hex reader that showed me values I couldn't interpret.
-
-_Is that temperature in register 100 or 101? Does the documentation start at 0 or 1? Why does TIA Portal call it 40000 when the manual says holding register 0? Is it big-endian or little-endian? Input registers or holding registers? Which function code do I even need?_
-
-Oh, and it was Modbus RTU, so add "are my termination resistors right?" and "is my wiring actually correct?" to the list. Because if those aren't perfect, you're reading absolutely nothing and troubleshooting blind.
-
-**This went on for four years.**
-
-Gradually, I figured it out. But I watched colleague after colleague hit the same walls. We'd eventually succeed, sure, with blood, sweat, and way too many site visits. The tools we had could read a float or an int if you were lucky, but they never gave you the full picture. Endianness? Swap the registers yourself and hope. Documentation starting at the wrong offset? Good luck finding where the data actually lives.
-
-Modbus TCP helped, at least the physical layer wasn't fighting you anymore. I built a TypeScript implementation for my home solar panels using [modbus-serial](https://www.npmjs.com/package/modbus-serial) (thanks [yaacov](https://github.com/yaacov)!), and things started clicking. The protocol itself actually made sense once you understood it.
-
-Then came another commissioning. More problems. More frustration. And I snapped.
-
-**"I've had enough of this."**
-
-I dove into the protocol properly, really _understood_ it, and realized: I already have the pieces. I know how this works now. I can build the tool I've been wishing existed this entire time.
-
-So I did.
-
-I built something that shows you every possible data interpretation at once. That scans not just for devices, but for _where the actual data is_ (because I once spent hours discovering third-party documentation had the wrong register range). That lets you test PLC implementations against simulated devices _before_ you're on-site hoping everything works.
-
-I use it every single day now. The idea of writing Modbus code and just _hoping_ it works when I connect to the real device? That's not how I work anymore.
-
-**If you've ever fought with Modbus, you'll understand why this needed to exist.**
-
-Built with Electron, React, and Material-UI. Open source because this industry needs better tools.
-
-### Free, and Staying Free
-
-No account, no trial, no paid tier.
-
-## Why "Modbux"?
-
-It's a typo I always made, _modbux_ instead of _modbus_. But it fits: it's your user experience (UX) working with Modbus. The typo became the brand.
 
 ## Pro Tip: Let AI Do the Boring Stuff
 
