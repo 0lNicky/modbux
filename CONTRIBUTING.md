@@ -13,21 +13,24 @@ this file, this section wins.
 
 - **No upstream contributions by default.** The owner says when a change goes
   upstream. Until then every PR targets `develop` on `origin`.
-- **`main` mirrors `upstream/main`.** Never commit to it. Sync it by
-  fast-forwarding to `upstream/main`, then merge `main` into `icp`.
-- **`icp` is the trunk, and it holds what has been released.** The owner merges
-  `develop` into it for a release.
+- **`main` is the trunk, and it holds what has been released.** The owner
+  merges `develop` into it for a release.
+- **`upstream/main` is the only copy of upstream.** No branch here mirrors it.
+  Sync with `git fetch upstream`, then merge `upstream/main` into `main`. Do not
+  press GitHub's "Sync fork" button: its "Discard commits" option drops every
+  commit this fork has
+  ([GitHub docs](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork)).
 - **`develop` is where work lands.** Branch from `develop` as
   `feature/description` or `fix/description`, and merge back into `develop`
   through a PR. CI runs on pull requests.
 - **An issue first is optional here.** It is required only for a change that
   will go upstream.
-- **A release bumps the version.** On `icp`, set `version` in `package.json` to
+- **A release bumps the version.** On `main`, set `version` in `package.json` to
   `X.Y.Z-icp.N`, commit it as `chore: release X.Y.Z-icp.N`, and push the tag
   `vX.Y.Z-icp.N`. The tag triggers the release workflow. `N` restarts at 1 when
   upstream's `X.Y.Z` changes. A feature PR does not bump it.
-- **A change meant for upstream** branches from `main` instead, after it is synced,
-  and follows the rest of this file as written.
+- **A change meant for upstream** branches from `upstream/main` instead, after
+  `git fetch upstream`, and follows the rest of this file as written.
 
 ## Ground rules
 
@@ -334,7 +337,7 @@ generic driver claims the device. Every `test:all:*` ends with this round, and
 
 ## Pull requests
 
-1. Branch from `develop` (from `main` for a change meant for upstream). Use `feature/description` or `fix/description`.
+1. Branch from `develop` (from `upstream/main` for a change meant for upstream). Use `feature/description` or `fix/description`.
 2. Keep commits clean. Squash fixups before requesting review.
 3. Write a clear PR description: what changed, why, and how to test it.
 4. `yarn verify` must pass. No exceptions.
