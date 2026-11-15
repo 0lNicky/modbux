@@ -9,13 +9,13 @@ English | [正體中文](./README.md)
 Paste this into Claude Code, Codex, Antigravity or any agent that can run shell commands:
 
 ````text
-Install Modbux from its latest release at https://github.com/fengchyunbih/modbux/releases
+Install Modbux from its latest release at https://github.com/0lNicky/modbux/releases
 and connect it to yourself as an MCP server. Do these in order, and stop at step 2.
 Do not build from source.
 
 1. Download the installer for my OS and CPU from the latest release, and install it:
    macOS .dmg (arm64 for Apple silicon, x64 for Intel), Windows x64-setup.exe, Linux
-   .deb or .AppImage. For example: gh release download -R fengchyunbih/modbux --pattern "*arm64.dmg"
+   .deb or .AppImage. For example: gh release download -R 0lNicky/modbux --pattern "*arm64.dmg"
    If macOS says the app is damaged, tell me; I open it with right-click, Open.
    Then start Modbux.
 2. Ask me to open the Modbux window, press the settings button on the Home screen,
@@ -45,9 +45,9 @@ The details are in [docs/mcp.md](docs/mcp.md) and the [user manual (正體中文
 
 <img src="./resources/icon.png" alt="Logo" width="60" />
 
-[![Release](https://img.shields.io/github/v/release/fengchyunbih/modbux?color=5b9279)](https://github.com/fengchyunbih/modbux/releases)
-[![Downloads](https://img.shields.io/github/downloads/fengchyunbih/modbux/total?color=5b9279&label=downloads)](https://github.com/fengchyunbih/modbux/releases)
-[![License](https://img.shields.io/github/license/fengchyunbih/modbux?color=5b9279)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/0lNicky/modbux?color=5b9279)](https://github.com/0lNicky/modbux/releases)
+[![Downloads](https://img.shields.io/github/downloads/0lNicky/modbux/total?color=5b9279&label=downloads)](https://github.com/0lNicky/modbux/releases)
+[![License](https://img.shields.io/github/license/0lNicky/modbux?color=5b9279)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5b9279)
 
 ## An Open Source Modbus Client & Server Simulation Tool for Windows, macOS and Linux
@@ -56,7 +56,7 @@ Modbux handles Modbus TCP, RTU and RTU over TCP, lets you assign datatypes to re
 
 ## Download
 
-**[Download the latest release](https://github.com/fengchyunbih/modbux/releases/latest)**
+**[Download the latest release](https://github.com/0lNicky/modbux/releases/latest)**
 
 Installers for Windows, and for macOS on both Apple silicon and Intel. Linux gets a `.deb`
 and an `.AppImage`, x64 and arm64.
@@ -127,13 +127,13 @@ Saved configs are JSON. Show Claude or ChatGPT a few example registers, paste yo
 
 ### Windows
 
-Download the `.exe` file from [releases](https://github.com/fengchyunbih/modbux/releases).
+Download the `.exe` file from [releases](https://github.com/0lNicky/modbux/releases).
 
 ⚠️ **SmartScreen warning**: Click "More info" → "Run anyway"
 
 ### macOS
 
-Download the `.dmg` file from [releases](https://github.com/fengchyunbih/modbux/releases). Pick `arm64` for Apple silicon and `x64` for Intel.
+Download the `.dmg` file from [releases](https://github.com/0lNicky/modbux/releases). Pick `arm64` for Apple silicon and `x64` for Intel.
 
 **macOS 12 or newer.** Modbux 2.3 moved to Electron 41, which does not run on Catalina or
 Big Sur. Modbux 2.2.1 still does, and stays on the [upstream releases page](https://github.com/ploxc/modbux/releases).
@@ -143,7 +143,7 @@ Big Sur. Modbux 2.2.1 still does, and stays on the [upstream releases page](http
 
 ### Linux
 
-Download the `.deb` or the `.AppImage` from [releases](https://github.com/fengchyunbih/modbux/releases), x64 or arm64. Building from source
+Download the `.deb` or the `.AppImage` from [releases](https://github.com/0lNicky/modbux/releases), x64 or arm64. Building from source
 works too, see [Build It Yourself](#build-it-yourself).
 
 Two things on Linux need a permission the app cannot give itself, and Modbux asks about
@@ -175,7 +175,7 @@ Modbux is an Electron application built with React, TypeScript, and Material-UI.
 **Clone and install dependencies:**
 
 ```bash
-git clone https://github.com/fengchyunbih/modbux.git
+git clone https://github.com/0lNicky/modbux.git
 cd modbux
 yarn
 ```
@@ -296,7 +296,7 @@ yarn build:linux
 
 ## Contributing
 
-Report a bug or request a feature in the [issues on fengchyunbih/modbux](https://github.com/fengchyunbih/modbux/issues). To contribute code, open a pull request into `develop`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules.
+Report a bug or request a feature in the [issues on 0lNicky/modbux](https://github.com/0lNicky/modbux/issues). To contribute code, open a pull request into `develop`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules.
 
 ## License
 

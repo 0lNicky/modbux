@@ -9,13 +9,13 @@
 將以下內容貼入 Claude Code、Codex、Antigravity 或任何可執行 shell 指令的代理程式：
 
 ````text
-Install Modbux from its latest release at https://github.com/fengchyunbih/modbux/releases
+Install Modbux from its latest release at https://github.com/0lNicky/modbux/releases
 and connect it to yourself as an MCP server. Do these in order, and stop at step 2.
 Do not build from source.
 
 1. Download the installer for my OS and CPU from the latest release, and install it:
    macOS .dmg (arm64 for Apple silicon, x64 for Intel), Windows x64-setup.exe, Linux
-   .deb or .AppImage. For example: gh release download -R fengchyunbih/modbux --pattern "*arm64.dmg"
+   .deb or .AppImage. For example: gh release download -R 0lNicky/modbux --pattern "*arm64.dmg"
    If macOS says the app is damaged, tell me; I open it with right-click, Open.
    Then start Modbux.
 2. Ask me to open the Modbux window, press the settings button on the Home screen,
@@ -45,9 +45,9 @@ Do not build from source.
 
 <img src="./resources/icon.png" alt="Logo" width="60" />
 
-[![Release](https://img.shields.io/github/v/release/fengchyunbih/modbux?color=5b9279)](https://github.com/fengchyunbih/modbux/releases)
-[![Downloads](https://img.shields.io/github/downloads/fengchyunbih/modbux/total?color=5b9279&label=downloads)](https://github.com/fengchyunbih/modbux/releases)
-[![License](https://img.shields.io/github/license/fengchyunbih/modbux?color=5b9279)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/0lNicky/modbux?color=5b9279)](https://github.com/0lNicky/modbux/releases)
+[![Downloads](https://img.shields.io/github/downloads/0lNicky/modbux/total?color=5b9279&label=downloads)](https://github.com/0lNicky/modbux/releases)
+[![License](https://img.shields.io/github/license/0lNicky/modbux?color=5b9279)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-5b9279)
 
 ## 適用於 Windows、macOS 與 Linux 的開源 Modbus Client 與 Server 模擬工具
@@ -56,7 +56,7 @@ Modbux 在單一應用程式中支援 Modbus TCP、RTU 與 RTU over TCP，可為
 
 ## 下載
 
-**[下載最新版本](https://github.com/fengchyunbih/modbux/releases/latest)**
+**[下載最新版本](https://github.com/0lNicky/modbux/releases/latest)**
 
 提供 Windows 安裝檔、macOS（Apple Silicon 與 Intel）安裝映像檔，以及 Linux 的 `.deb` 與 `.AppImage`（x64 與 arm64）。
 
@@ -124,13 +124,13 @@ Modbux 在單一應用程式中支援 Modbus TCP、RTU 與 RTU over TCP，可為
 
 ### Windows
 
-從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.exe` 安裝檔。
+從 [releases](https://github.com/0lNicky/modbux/releases) 下載 `.exe` 安裝檔。
 
 ⚠️ **SmartScreen 警告**：點擊「其他資訊」（More info）→「仍要執行」（Run anyway）
 
 ### macOS
 
-從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.dmg` 檔案。Apple Silicon 請選擇 `arm64`，Intel 請選擇 `x64`。
+從 [releases](https://github.com/0lNicky/modbux/releases) 下載 `.dmg` 檔案。Apple Silicon 請選擇 `arm64`，Intel 請選擇 `x64`。
 
 **需 macOS 12 以上版本。** Modbux 2.3 升級至 Electron 41，不再支援 Catalina 或 Big Sur。Modbux 2.2.1 仍支援舊版系統，並保留於[上游 releases 頁面](https://github.com/ploxc/modbux/releases)。
 
@@ -138,7 +138,7 @@ Modbux 在單一應用程式中支援 Modbus TCP、RTU 與 RTU over TCP，可為
 
 ### Linux
 
-從 [releases](https://github.com/fengchyunbih/modbux/releases) 下載 `.deb` 或 `.AppImage`（支援 x64 與 arm64）。亦可從原始碼建置，請參閱[自行建置](#自行建置)。
+從 [releases](https://github.com/0lNicky/modbux/releases) 下載 `.deb` 或 `.AppImage`（支援 x64 與 arm64）。亦可從原始碼建置，請參閱[自行建置](#自行建置)。
 
 在 Linux 上有兩項功能需要應用程式無法自行取得的系統權限，Modbux 會主動彈出提示詢問，而非默默失敗：
 
@@ -161,7 +161,7 @@ Modbux 是使用 React、TypeScript 與 Material-UI 建構的 Electron 應用程
 **複製儲存庫並安裝相依套件：**
 
 ```bash
-git clone https://github.com/fengchyunbih/modbux.git
+git clone https://github.com/0lNicky/modbux.git
 cd modbux
 yarn
 ```
@@ -264,7 +264,7 @@ yarn build:linux
 
 ## 參與貢獻
 
-回報錯誤或提出功能需求，請至 [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux/issues) 開 Issue。要貢獻程式碼，請針對 `develop` 分支提出 Pull Request，相關規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。
+回報錯誤或提出功能需求，請至 [0lNicky/modbux](https://github.com/0lNicky/modbux/issues) 開 Issue。要貢獻程式碼，請針對 `develop` 分支提出 Pull Request，相關規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 授權條款
 
