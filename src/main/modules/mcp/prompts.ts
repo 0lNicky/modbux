@@ -4,8 +4,8 @@ import z from 'zod'
 import { ENCODING_RESOURCE_URI } from './resources'
 
 /**
- * The prompts: three workflows an agent follows with the tools, each started
- * by the user with a point table.
+ * The prompts: workflows an agent follows with the tools. Three start from a
+ * point table and one from a device fault to simulate.
  *
  * A prompt is text the client hands to the model, so each one names the tools
  * in the order to call them, and the check that tells the agent it is done.
@@ -91,7 +91,47 @@ Steps:
 
 The client and the server are the same program, so a pass shows the two sides agree with each other. It does not show that the table matches a real device.`)
 
-/** Put the three prompts on `server`. */
+const SITUATION_ARGUMENT = {
+  situation: z
+    .string()
+    .min(1)
+    .describe(
+      'The device fault to simulate, in words: offline, busy, slow, a dropped connection, a frozen or invalid value, a counter rolling over, or anything else a field device does.'
+    )
+}
+
+/** Make a Modbux server misbehave the way a faulty device would. */
+export const simulateDeviceFaultPrompt = (situation: string): GetPromptResult =>
+  userMessage(`Make a Modbux server behave like a device with this fault, so the user can see what their master (SCADA, PLC, gateway) does about it.
+
+Situation: ${situation}
+
+Steps:
+
+1. Call server_list and pick the server the master polls; ask the user if it is not clear. Call server_get_values on it to see the units and registers it holds, and server_get_requests to see what the master is asking (unit id, register type, addresses, how often).
+2. Build the fault from the pieces below. A fault in how the device answers is a rule for server_set_faults; a fault in what it answers is a value for server_set_values. Use the unit id, register type and addresses from step 1 so the rule matches what the master really asks.
+3. Apply it. For a value, call server_get_values to confirm what the server now holds. Then call server_get_requests with sinceTimestamp set to when you applied it, and check that the master's requests carry a fault naming your rule (or, for a value, that the master read the right unit and range and the read succeeded). A read record carries no values, so what the master received shows in the master's own result or in a second read of the value. server_get_faults answers how often each rule matched and fired. A rule that never fires means its conditions do not match what the master asks: compare them with the requests. A request modbus-serial answers by itself, such as a quantity of 0, is in neither list.
+4. Tell the user what you set, what the requests show, and how to stop it.
+
+Rules (server_set_faults replaces the whole list; the first rule that matches a request decides it, so put the narrow rules first):
+
+- Offline: \`{ unitId, action: { kind: "no_response" } }\`. The device answers nothing, as if it were unplugged, and a write stores nothing.
+- Busy: \`{ unitId, action: { kind: "exception", code: 6 } }\` (6 is Server Device Busy). Add \`everyNth: 3\` for a device that is busy now and then.
+- Refusing writes: \`{ direction: "write", action: { kind: "exception", code: 1 } }\` (illegal function), or code 2 for an address the device does not have.
+- Slow: \`{ action: { kind: "delay", ms } }\`. Values are read and written as usual and the answer comes ms later; set ms above the master's timeout to make it time out.
+- A fault for a while: add \`forSeconds\` to any rule, and it removes itself.
+- A dropped connection: call server_drop_connections. The server keeps listening and the master can reconnect. For an outage, set a no_response rule with forSeconds first, then drop the connections. RTU has no connections to drop; use no_response there.
+
+Values (server_set_values writes engineering values into registers the server already holds; a register a generator drives is refused, so replace that point with a fixed value through server_apply_point_table first, which replaces every register of the unit it names, so give it every point):
+
+- A frozen value: a fixed value in place of a generator, and leave it.
+- An invalid-value sentinel: 65535 (0xFFFF) on a uint16, -32768 (0x8000) on an int16. A float NaN cannot be sent as JSON: make the same address two uint16 points holding the words of a NaN (0x7FC0 and 0x0000 for a float32 in ABCD order; swap them for CDAB) with server_apply_point_table.
+- Out of range: a value outside the range the point table gives but inside its data type, such as 9999 on a temperature.
+- A counter rolling over: set the counter near the top of its type (4294967290 on a uint32), then to a small value.
+
+Stop it with server_clear_faults, and server_set_values or server_apply_point_table for the values. The user can also clear the rules with the button the server view shows while any are set. Rules live in memory only: a restart, deleting the server, or loading a config or project file onto it clears them.`)
+
+/** Put the four prompts on `server`. */
 export const registerPrompts = (server: McpServer): void => {
   server.registerPrompt(
     'point_table_to_client',
@@ -122,5 +162,15 @@ export const registerPrompts = (server: McpServer): void => {
       argsSchema: POINT_TABLE_ARGUMENT
     },
     ({ pointTable }) => closedLoopTestPrompt(pointTable)
+  )
+  server.registerPrompt(
+    'simulate_device_fault',
+    {
+      title: 'Simulate a device fault',
+      description:
+        'Make a Modbux server act like a faulty device: offline, busy, slow, dropping connections, or answering frozen or invalid values, and check from its request log that the fault fired.',
+      argsSchema: SITUATION_ARGUMENT
+    },
+    ({ situation }) => simulateDeviceFaultPrompt(situation)
   )
 }

@@ -25,13 +25,24 @@ export interface McpToolContext {
     | 'startPollingWhenSettled'
     | 'stopPollingAndWait'
     | 'writeRaw'
+    | 'transactions'
+    | 'transactionMark'
   >
   appState: Pick<
     AppState,
     'connectionConfig' | 'registerConfig' | 'registerMapping' | 'readConfiguration'
   >
-  /** The Modbus servers' registers, which hold the words a master reads. */
-  server: Pick<ModbusServer, 'readRegisters'>
+  /** The Modbus servers' registers, the requests masters sent them, and their fault rules. */
+  server: Pick<
+    ModbusServer,
+    | 'readRegisters'
+    | 'getRequests'
+    | 'hasServer'
+    | 'setFaults'
+    | 'getFaults'
+    | 'clearFaults'
+    | 'dropConnections'
+  >
   rendererCommands: Pick<RendererCommands, 'send'>
   /** Whether the main window is open, which every tool needs (已決定 4). */
   mainWindowOpen: () => boolean

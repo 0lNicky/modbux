@@ -174,6 +174,22 @@ export async function expectCellContains(
 }
 
 /**
+ * Assert a cell of the newest row in the transaction log, which must be open.
+ *
+ * The register grid helpers above address a row by a numeric id; a transaction's
+ * id is a string, and the grid lists the newest first, so the newest is the
+ * first row under the header.
+ */
+export async function expectNewestTransactionCell(
+  p: Page,
+  field: string,
+  expected: string | RegExp
+): Promise<void> {
+  const newestRow = p.getByTestId('transaction-log-panel').locator('.MuiDataGrid-row').first()
+  await expect(newestRow.locator(`[data-field="${field}"]`)).toHaveText(expected)
+}
+
+/**
  * Add a register with full config support.
  * Uses test.step() for named reporting per register.
  * @param modalAlreadyOpen - set to true if modal is already open (e.g. after "Add & Next")
@@ -867,6 +883,18 @@ export async function splitOutServerWindow(app: ElectronApplication, p: Page): P
   ])
   await serverPage.waitForLoadState('domcontentloaded')
   return serverPage
+}
+
+/** Open the fault rules dialog of the shown server, from the Server view's indicator. */
+export async function openFaultRules(p: Page): Promise<void> {
+  await p.getByTestId('server-faults-indicator').click()
+  await expect(p.getByTestId('server-faults-dialog')).toBeVisible()
+}
+
+/** Close the fault rules dialog with its Close button. */
+export async function closeFaultRules(p: Page): Promise<void> {
+  await p.getByTestId('server-faults-close-btn').click()
+  await expect(p.getByTestId('server-faults-dialog')).toBeHidden()
 }
 
 /**

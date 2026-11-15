@@ -10,10 +10,17 @@ import {
   StartRtuServerParams,
   ServerEndianness,
   NumberRegisters,
-  UnitIdString
+  UnitIdString,
+  MAIN_SERVER_UUID,
+  ServerFaultRule,
+  ServerFaultRuleStatus,
+  ServerFaultStatus,
+  ServerFaultWrite
 } from '@shared'
 import { Windows } from '../windows'
+import { ServerFaults } from './modbusServer/faults'
 import { ServerRegistry } from './modbusServer/registry'
+import { ServerRequest, ServerRequestFilter, ServerRequestLog } from './modbusServer/requestLog'
 import { RtuServer } from './modbusServer/rtu'
 import { TcpServers } from './modbusServer/tcp'
 
@@ -21,18 +28,31 @@ interface ServerParams {
   windows: Windows
 }
 
+/** What `dropConnections` did: how many connections it closed, or why it closed none. */
+export type DropConnectionsOutcome = { dropped: number } | { error: string }
+
 /**
- * The four parts of a Modbus server, and what one uuid means across them.
+ * The six parts of a Modbus server, and what one uuid means across them.
  *
  * `ServerRegistry` holds the registers, `TcpServers` holds the listeners,
- * `RtuServer` holds the serial port, and `createVector` is what the two
- * transports ask the registry through. Everything public here is what
- * `main/ipc.ts` calls, apart from `readRegisters`, which the MCP tools call; a method that names more than one part is one this
- * class answers itself, and the rest hand their parameters over.
+ * `RtuServer` holds the serial port, `createVector` is what the two transports
+ * ask the registry through, `ServerRequestLog` holds what the vectors
+ * answered, and `ServerFaults` holds the rules the vectors ask first.
+ * Everything public here is what `main/ipc.ts` or the MCP tools call; a method
+ * that names more than one part is one this class answers itself, and the rest
+ * hand their parameters over.
  */
 export class ModbusServer {
   /** What every server holds, keyed by uuid and then by unit id. */
   private _registry: ServerRegistry
+
+  /** The requests each uuid answered, which both transports' vectors record. */
+  private _requestLog: ServerRequestLog = new ServerRequestLog()
+
+  /** The uuids `hasServer` answers for besides the main server's. */
+  private _known: Set<string> = new Set()
+  /** The fault rules of each uuid, which both transports' vectors ask. */
+  private _faults: ServerFaults
 
   /** The TCP listeners, one per uuid. */
   private _tcp: TcpServers
@@ -57,8 +77,15 @@ export class ModbusServer {
       windows,
       onUnitData: (uuid): void => this._rtu.warnBroadcastUnit(uuid)
     })
-    this._rtu = new RtuServer({ windows, registry: this._registry })
-    this._tcp = new TcpServers({ windows, registry: this._registry })
+    // Every window is told, because both draw the server view and a split out
+    // window can close while the rules stay.
+    this._faults = new ServerFaults({
+      onChange: (uuid, rules, version): void =>
+        windows.send('server_faults', { uuid, version, rules })
+    })
+    const stores = { registry: this._registry, requestLog: this._requestLog, faults: this._faults }
+    this._rtu = new RtuServer({ windows, ...stores })
+    this._tcp = new TcpServers({ windows, ...stores })
   }
 
   /**
@@ -77,9 +104,75 @@ export class ModbusServer {
       (_, offset) => this._registry.read(uuid, unitId, registerType, address + offset) ?? 0
     )
 
-  /** Binds a listener for a uuid, and answers the port it took. */
-  public createServer = (params: CreateServerParams): Promise<number | undefined> =>
-    this._tcp.create(params)
+  /** The requests a master sent `uuid` that pass `filter`, oldest first. */
+  public getRequests = (uuid: string, filter: ServerRequestFilter): ServerRequest[] =>
+    this._requestLog.list(uuid, filter)
+
+  /**
+   * Whether main has `uuid`: the main server always, and another one from the
+   * `createServer` or `startRtuServer` that named it until `deleteServer`.
+   *
+   * Not whether it listens. A server whose bind failed, or that RTU mode
+   * stopped, is still a server the user has and may give fault rules.
+   */
+  public hasServer = (uuid: string): boolean => uuid === MAIN_SERVER_UUID || this._known.has(uuid)
+
+  /**
+   * Replaces `uuid`'s fault rules, and answers the list now in effect.
+   * `undefined` for a server main does not have, which gets none.
+   */
+  public setFaults = (uuid: string, rules: ServerFaultRule[]): ServerFaultRule[] | undefined =>
+    this.hasServer(uuid) ? this._faults.set(uuid, rules) : undefined
+
+  /**
+   * Replaces `uuid`'s fault rules only while main has the server and its list
+   * is still at `version`, and answers whether it did with the list now in
+   * effect.
+   */
+  public replaceFaults = (
+    uuid: string,
+    version: number,
+    rules: ServerFaultRule[]
+  ): ServerFaultWrite => {
+    const taken = this.hasServer(uuid) && this._faults.replace(uuid, version, rules)
+    return { taken, status: this.getFaultStatus(uuid) }
+  }
+
+  /** `uuid`'s fault rules with their counts, the version of that list, and whether main has the server. */
+  public getFaultStatus = (uuid: string): ServerFaultStatus => ({
+    ...this._faults.snapshot(uuid),
+    exists: this.hasServer(uuid)
+  })
+
+  /** `uuid`'s fault rules, each with how often it matched and fired. */
+  public getFaults = (uuid: string): ServerFaultRuleStatus[] => this._faults.status(uuid)
+
+  /** Every server that has fault rules, with its list, for a window catching up. */
+  public allFaults = (): Record<string, ServerFaultRule[]> => this._faults.all()
+
+  /** Removes every fault rule of `uuid`. */
+  public clearFaults = (uuid: string): void => this._faults.clear(uuid)
+
+  /**
+   * Closes every connection a master has open to `uuid`, and keeps the listener.
+   *
+   * The RTU server has no connection to close: a serial line is one bus, and
+   * closing the port would stop the server.
+   */
+  public dropConnections = (uuid: string): DropConnectionsOutcome => {
+    const dropped = this._tcp.dropConnections(uuid)
+    if (dropped !== undefined) return { dropped }
+    if (this._rtu.uuid === uuid) {
+      return { error: 'The server runs on RTU, which has no connections to drop' }
+    }
+    return { error: `The server ${uuid} has no TCP listener` }
+  }
+
+  /** Binds a listener for a uuid, and answers the port it took. The uuid is a server from here on, bound or not. */
+  public createServer = (params: CreateServerParams): Promise<number | undefined> => {
+    this._known.add(params.uuid)
+    return this._tcp.create(params)
+  }
 
   /**
    * Deletes a server for the given UUID, releasing everything held under it.
@@ -100,6 +193,9 @@ export class ModbusServer {
     }
 
     this._registry.deleteUuid(uuid)
+    this._requestLog.delete(uuid)
+    this._known.delete(uuid)
+    this._faults.forget(uuid)
 
     await this._tcp.closeAndForget(uuid)
   }
@@ -157,7 +253,10 @@ export class ModbusServer {
   public syncBools = (params: SyncBoolsParameters): void => this._registry.syncBools(params)
 
   /** Starts an RTU server on a serial port for the given UUID. */
-  public startRtuServer = (params: StartRtuServerParams): Promise<void> => this._rtu.start(params)
+  public startRtuServer = (params: StartRtuServerParams): Promise<void> => {
+    this._known.add(params.uuid)
+    return this._rtu.start(params)
+  }
 
   /** Stops the active RTU server if one is running. */
   public stopRtuServer = (): Promise<void> => this._rtu.stop()

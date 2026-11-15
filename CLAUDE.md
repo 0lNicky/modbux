@@ -30,8 +30,10 @@ This is a fork (`origin`, `fengchyunbih/modbux`) of `ploxc/modbux` (`upstream`).
 Nothing here is contributed upstream until the owner says so.
 
 - `main` mirrors `upstream/main`. Do not commit to it, and do not branch from it.
-- `icp` is this fork's trunk. Branch from `icp`, open the PR into `icp`, and
-  open it on `origin`.
+- `icp` is this fork's trunk, and it holds what has been released.
+- `develop` is where work lands. Branch from `develop`, open the PR into
+  `develop`, and open it on `origin`. The owner merges `develop` into `icp` for a
+  release.
 - A release bumps `version` in `package.json` to `X.Y.Z-icp.N` on `icp`, commits
   it as `chore: release X.Y.Z-icp.N`, and pushes the tag `vX.Y.Z-icp.N`. The tag
   triggers `.github/workflows/release.yml`. `N` restarts at 1 when upstream's

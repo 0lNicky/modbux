@@ -3,7 +3,7 @@ import { ServerSerial } from 'modbus-serial'
 import { Windows } from '../../windows'
 import { emitServerMessage } from './messages'
 import { ServerRegistry } from './registry'
-import { BROADCAST_UNIT_ID, createVector } from './vector'
+import { BROADCAST_UNIT_ID, createVector, PendingReplies, VectorStores } from './vector'
 
 /**
  * The serial port under a `ServerSerial`, with the events this file listens for.
@@ -38,9 +38,8 @@ type ServerSerialConstructor = new (
   ...args: [...ConstructorParameters<typeof ServerSerial>, ServerSerialPortOptions]
 ) => ServerSerial
 
-interface RtuServerParams {
+interface RtuServerParams extends VectorStores {
   windows: Windows
-  registry: ServerRegistry
 }
 
 /**
@@ -53,16 +52,20 @@ interface RtuServerParams {
 export class RtuServer {
   private _windows: Windows
   private _registry: ServerRegistry
+  private _stores: VectorStores
 
   private _server: ServerSerial | null = null
+  /** The answers a delay rule is holding back, cancelled when the server stops. */
+  private _pending: PendingReplies = new PendingReplies()
   private _uuid: string | null = null
   private _active: boolean = false
   private _generation: number = 0
   private _broadcastWarningSent: boolean = false
 
-  constructor({ windows, registry }: RtuServerParams) {
+  constructor({ windows, ...stores }: RtuServerParams) {
     this._windows = windows
-    this._registry = registry
+    this._registry = stores.registry
+    this._stores = stores
   }
 
   /** Whether the RTU server is running, for a window that has to ask. */
@@ -127,7 +130,7 @@ export class RtuServer {
       // alone. Its default of 255 means "listen to all addresses", and the
       // vector filters, because only the vector knows which ids have data.
       this._server = new (ServerSerial as ServerSerialConstructor)(
-        createVector(this._registry, uuid, 'rtu'),
+        createVector(this._stores, uuid, 'rtu', this._pending),
         {
           path: serialConfig.com,
           baudRate: Number(serialConfig.options.baudRate),
@@ -207,6 +210,7 @@ export class RtuServer {
     if (!this._server) return
     const server = this._server
     const wasActive = this._active
+    this._pending.cancelAll()
     this._server = null
     this._uuid = null
     this._active = false

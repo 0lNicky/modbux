@@ -22,7 +22,8 @@ import {
   SyncBoolsParametersSchema,
   SyncRegisterValueParamsSchema,
   ServerEndiannessSchema,
-  ServerUuidSchema
+  ServerUuidSchema,
+  SetServerFaultsParamsSchema
 } from '@shared'
 import { Windows } from './windows'
 import { ModbusClient } from './modules/modbusClient'
@@ -318,6 +319,16 @@ export const initIpc: InitIpcFn = (app, state, client, server, windows, mcp) => 
   ipcHandle('set_mcp_enabled', (_, enabled) => mcp.setEnabled(enabled))
   ipcHandle('set_mcp_allow_writes', (_, allowWrites) => mcp.setAllowWrites(allowWrites))
   ipcHandle('regenerate_mcp_token', () => mcp.regenerateToken())
+
+  // Fault rules (set over MCP or by a window, which shows, edits and clears them)
+  ipcHandle('get_server_faults', () => server.allFaults())
+  ipcHandle('clear_server_faults', (_, uuid) => server.clearFaults(uuid), ServerUuidSchema)
+  ipcHandle(
+    'set_server_faults',
+    (_, { uuid, version, rules }) => server.replaceFaults(uuid, version, rules),
+    SetServerFaultsParamsSchema
+  )
+  ipcHandle('get_server_fault_status', (_, uuid) => server.getFaultStatus(uuid))
 
   // Serial port discovery
   ipcHandle('list_serial_ports', () => client.listSerialPorts())

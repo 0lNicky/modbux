@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { BaseDataType, RegisterParams, UnitIdString } from '@shared'
 import type { Windows } from '../../windows'
-import { defaultSerialPortOptions, MCP_PORT } from '@shared'
+import { defaultSerialPortOptions, MAIN_SERVER_UUID, MCP_PORT } from '@shared'
 import type { IServiceVector } from 'modbus-serial/ServerTCP'
 
 // Configurable port availability for net mock
@@ -123,6 +123,13 @@ const lastVector = (constructor: typeof ServerTCP | typeof ServerSerial): Server
   }
   return resolved as ServerVector
 }
+
+/**
+ * Waits for the vector to answer a bit request. The bit accessors collect the
+ * calls of one frame and answer from the microtask the first call queued, which
+ * runs before this one resumes.
+ */
+const answered = (): Promise<void> => Promise.resolve()
 
 /** What the last server constructor returned, or a failure saying there was none. */
 const lastInstance = (constructor: typeof ServerTCP | typeof ServerSerial) => {
@@ -1589,6 +1596,19 @@ describe('ModbusServer', () => {
       )
     })
 
+    it("drops the requests the uuid answered and keeps the other servers' ones", async () => {
+      const otherUuid = 'other-server'
+      await server.createServer({ uuid, port: 5020 })
+      lastVector(ServerTCP).getHoldingRegister(0, unitIdNumber, vi.fn())
+      await server.createServer({ uuid: otherUuid, port: 5021 })
+      lastVector(ServerTCP).getHoldingRegister(0, unitIdNumber, vi.fn())
+
+      await server.deleteServer(uuid)
+
+      expect(server.getRequests(uuid, { limit: 50 })).toEqual([])
+      expect(server.getRequests(otherUuid, { limit: 50 })).toHaveLength(1)
+    })
+
     it('frees the register data of a uuid that never bound a listener', async () => {
       server.addRegister({
         uuid,
@@ -1971,6 +1991,15 @@ describe('ModbusServer', () => {
       expect(vi.mocked(ServerSerial).mock.calls.length).toBe(2)
     })
 
+    it('records its requests in the log the TCP server records in', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      lastVector(ServerTCP).getHoldingRegister(0, unitIdNumber, vi.fn())
+      await server.startRtuServer({ uuid, serialConfig })
+      lastVector(ServerSerial).getHoldingRegister(1, unitIdNumber, vi.fn())
+
+      expect(server.getRequests(uuid, { limit: 50 }).map(({ address }) => address)).toEqual([0, 1])
+    })
+
     it('shares register data with TCP server via same vector', async () => {
       // Add data, then start RTU — vector references same _serverData
       server.addRegister({
@@ -2253,6 +2282,237 @@ describe('ModbusServer', () => {
     })
   })
 
+  describe('fault rules', () => {
+    const rule = { unitId: 1, action: { kind: 'no_response' as const } }
+    const rtuConfig = {
+      com: '/dev/ttyUSB0',
+      options: {
+        baudRate: '9600' as const,
+        dataBits: 8 as const,
+        stopBits: 1 as const,
+        parity: 'none' as const
+      }
+    }
+
+    describe('a delayed answer still pending', () => {
+      const delay = { action: { kind: 'delay' as const, ms: 500 } }
+
+      /** Asks the vector for one holding register of the hosted unit, and answers the callback. */
+      const askHeld = (vector: ServerVector) => {
+        const cb = vi.fn()
+        vector.getHoldingRegister(100, unitIdNumber, cb)
+        return cb
+      }
+
+      it('is cancelled when the server is deleted', async () => {
+        await server.createServer({ uuid, port: 5020 })
+        hostUnit()
+        server.setFaults(uuid, [delay])
+        const cb = askHeld(lastVector(ServerTCP))
+
+        await server.deleteServer(uuid)
+        await vi.advanceTimersByTimeAsync(5000)
+
+        expect(cb).not.toHaveBeenCalled()
+      })
+
+      it('is cancelled when the TCP listeners stop', async () => {
+        await server.createServer({ uuid, port: 5020 })
+        hostUnit()
+        server.setFaults(uuid, [delay])
+        const cb = askHeld(lastVector(ServerTCP))
+
+        await server.stopAllTcpServers()
+        await vi.advanceTimersByTimeAsync(5000)
+
+        expect(cb).not.toHaveBeenCalled()
+      })
+
+      it('is cancelled when the RTU server stops', async () => {
+        await server.startRtuServer({ uuid, serialConfig: rtuConfig })
+        hostUnit()
+        server.setFaults(uuid, [delay])
+        const cb = askHeld(lastVector(ServerSerial))
+
+        await server.stopRtuServer()
+        await vi.advanceTimersByTimeAsync(5000)
+
+        expect(cb).not.toHaveBeenCalled()
+      })
+
+      it('is delivered at its time though the rules were cleared or replaced', async () => {
+        await server.createServer({ uuid, port: 5020 })
+        hostUnit()
+        server.setFaults(uuid, [delay])
+        const vector = lastVector(ServerTCP)
+        const beforeClear = askHeld(vector)
+        server.clearFaults(uuid)
+        server.setFaults(uuid, [delay])
+        const beforeReplace = askHeld(vector)
+        server.setFaults(uuid, [{ action: { kind: 'no_response' } }])
+
+        await vi.advanceTimersByTimeAsync(499)
+        expect(beforeClear).not.toHaveBeenCalled()
+        await vi.advanceTimersByTimeAsync(1)
+
+        expect(beforeClear).toHaveBeenCalledExactlyOnceWith(null, 1)
+        expect(beforeReplace).toHaveBeenCalledExactlyOnceWith(null, 1)
+      })
+    })
+
+    it('tells every window the list on each change', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      clearWindowCalls()
+      server.setFaults(uuid, [rule])
+      const afterSet = server.getFaultStatus(uuid).version
+      server.clearFaults(uuid)
+
+      expect(getWindowCalls('server_faults').map(([, payload]) => payload)).toEqual([
+        { uuid, version: afterSet, rules: [rule] },
+        { uuid, version: server.getFaultStatus(uuid).version, rules: [] }
+      ])
+      expect(afterSet).not.toBe(server.getFaultStatus(uuid).version)
+      expect(getAddressees('server_faults')).toEqual([undefined, undefined])
+    })
+
+    it('forgets a deleted server’s rules, and says so', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      server.setFaults(uuid, [rule])
+      clearWindowCalls()
+
+      await server.deleteServer(uuid)
+
+      expect(server.getFaults(uuid)).toEqual([])
+      expect(server.allFaults()).toEqual({})
+      expect(getWindowCalls('server_faults').map(([, payload]) => payload)).toEqual([
+        { uuid, version: server.getFaultStatus(uuid).version, rules: [] }
+      ])
+    })
+
+    it('refuses a window’s write built before the server was deleted, though it held no rules', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      const read = server.getFaultStatus(uuid).version
+
+      await server.deleteServer(uuid)
+
+      expect(server.replaceFaults(uuid, read, [rule])).toEqual({
+        taken: false,
+        status: { version: server.getFaultStatus(uuid).version, rules: [], exists: false }
+      })
+      expect(server.allFaults()).toEqual({})
+    })
+
+    // The version a window refreshes to after the delete is current, so the
+    // version alone would take the write: main has to know the server is gone.
+    it('refuses a window’s save after the delete and its refresh, and the server undo restores starts with no rules', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      server.setFaults(uuid, [rule])
+
+      await server.deleteServer(uuid)
+      const refreshed = server.getFaultStatus(uuid)
+      const save = server.replaceFaults(uuid, refreshed.version, [
+        { action: { kind: 'exception', code: 6 } }
+      ])
+
+      expect(refreshed).toEqual({ version: refreshed.version, rules: [], exists: false })
+      expect(save).toEqual({ taken: false, status: refreshed })
+      expect(server.allFaults()).toEqual({})
+
+      // Undo replays the server under the same uuid through create_server.
+      await server.createServer({ uuid, port: 5020 })
+      hostUnit()
+      const cb = vi.fn()
+      lastVector(ServerTCP).getHoldingRegister(100, unitIdNumber, cb)
+
+      expect(server.getFaultStatus(uuid)).toEqual({
+        version: refreshed.version,
+        rules: [],
+        exists: true
+      })
+      expect(cb).toHaveBeenCalledExactlyOnceWith(null, 1)
+    })
+
+    it('refuses an MCP set for a deleted server, and keeps no rules for it', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      await server.deleteServer(uuid)
+
+      expect(server.setFaults(uuid, [rule])).toBeUndefined()
+      expect(server.allFaults()).toEqual({})
+    })
+
+    it('takes rules from MCP and from a window for a server whose bind failed', async () => {
+      // 65535 busy walks to 65536, which is no port, so the bind fails.
+      portAvailableResults = [false]
+      expect(await server.createServer({ uuid, port: 65535 })).toBeUndefined()
+
+      expect(server.setFaults(uuid, [rule])).toEqual([rule])
+      const status = server.getFaultStatus(uuid)
+      expect(server.replaceFaults(uuid, status.version, [])).toEqual({
+        taken: true,
+        status: { version: server.getFaultStatus(uuid).version, rules: [], exists: true }
+      })
+    })
+
+    it('takes a window’s write at the version it read, refuses it once MCP changed the list, and answers the list either way', async () => {
+      await server.createServer({ uuid, port: 5020 })
+      const read = server.getFaultStatus(uuid).version
+      server.setFaults(uuid, [rule])
+      const afterMcp = server.getFaultStatus(uuid)
+
+      expect(server.replaceFaults(uuid, read, [])).toEqual({ taken: false, status: afterMcp })
+      expect(server.getFaults(uuid)).toEqual(afterMcp.rules)
+
+      const taken = server.replaceFaults(uuid, afterMcp.version, [])
+      expect(taken).toEqual({ taken: true, status: server.getFaultStatus(uuid) })
+      expect(server.getFaults(uuid)).toEqual([])
+    })
+
+    it('keeps another server’s rules when one is deleted', async () => {
+      await server.createServer({ uuid: 'the-other-one', port: 5021 })
+      server.setFaults('the-other-one', [rule])
+
+      await server.deleteServer(uuid)
+
+      expect(server.allFaults()).toEqual({ 'the-other-one': [rule] })
+    })
+
+    it('refuses to drop connections on the RTU server', async () => {
+      await server.startRtuServer({ uuid, serialConfig: rtuConfig })
+
+      expect(server.dropConnections(uuid)).toEqual({
+        error: 'The server runs on RTU, which has no connections to drop'
+      })
+    })
+
+    it('refuses to drop connections on a uuid with no listener', () => {
+      expect(server.dropConnections('not-a-server')).toEqual({
+        error: 'The server not-a-server has no TCP listener'
+      })
+    })
+
+    it('knows the main server and every server created and not deleted since, listening or not', async () => {
+      expect(server.hasServer(MAIN_SERVER_UUID)).toBe(true)
+      expect(server.hasServer(uuid)).toBe(false)
+
+      await server.createServer({ uuid, port: 5020 })
+      expect(server.hasServer(uuid)).toBe(true)
+
+      await server.stopAllTcpServers()
+      expect(server.hasServer(uuid)).toBe(true)
+
+      await server.deleteServer(uuid)
+      expect(server.hasServer(uuid)).toBe(false)
+
+      await server.startRtuServer({ uuid, serialConfig: rtuConfig })
+      expect(server.hasServer(uuid)).toBe(true)
+    })
+
+    it('says a server it does not know is gone in the status', () => {
+      expect(server.getFaultStatus('not-a-server').exists).toBe(false)
+      expect(server.getFaultStatus(MAIN_SERVER_UUID).exists).toBe(true)
+    })
+  })
+
   describe('vector methods', () => {
     let vector: ServerVector
 
@@ -2262,32 +2522,36 @@ describe('ModbusServer', () => {
     })
 
     describe('getCoil', () => {
-      it('returns coil value for valid address and unitId', () => {
+      it('returns coil value for valid address and unitId', async () => {
         server.setBool({ uuid, unitId, registerType: 'coils', address: 5, state: true })
         const cb = vi.fn()
         vector.getCoil(5, 1, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(null, true)
       })
 
-      it('returns false for unset coil address', () => {
+      it('returns false for unset coil address', async () => {
         server.setBool({ uuid, unitId, registerType: 'coils', address: 0, state: false })
         const cb = vi.fn()
         vector.getCoil(0, 1, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(null, false)
       })
 
-      it('returns error for invalid unitId (>255)', () => {
+      it('returns error for invalid unitId (>255)', async () => {
         const cb = vi.fn()
         vector.getCoil(0, 300, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(
           expect.objectContaining({ modbusErrorCode: SERVER_DEVICE_FAILURE }),
           false
         )
       })
 
-      it('refuses a unit id it does not host', () => {
+      it('refuses a unit id it does not host', async () => {
         const cb = vi.fn()
         vector.getCoil(0, 1, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(
           expect.objectContaining({ modbusErrorCode: GATEWAY_TARGET_FAILED }),
           false
@@ -2302,10 +2566,11 @@ describe('ModbusServer', () => {
      * values, which is what keeps this a refactor.
      */
     describe('an address inside the range with nothing in it', () => {
-      it('answers false for a coil the unit never wrote', () => {
+      it('answers false for a coil the unit never wrote', async () => {
         server.setBool({ uuid, unitId, registerType: 'coils', address: 0, state: true })
         const cb = vi.fn()
         vector.getCoil(9, 1, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(null, false)
       })
 
@@ -2344,25 +2609,28 @@ describe('ModbusServer', () => {
     })
 
     describe('getDiscreteInput', () => {
-      it('returns discrete input value', () => {
+      it('returns discrete input value', async () => {
         server.setBool({ uuid, unitId, registerType: 'discrete_inputs', address: 3, state: true })
         const cb = vi.fn()
         vector.getDiscreteInput(3, 1, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(null, true)
       })
 
-      it('returns error for invalid unitId', () => {
+      it('returns error for invalid unitId', async () => {
         const cb = vi.fn()
         vector.getDiscreteInput(0, 300, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(
           expect.objectContaining({ modbusErrorCode: SERVER_DEVICE_FAILURE }),
           false
         )
       })
 
-      it('refuses a unit id it does not host', () => {
+      it('refuses a unit id it does not host', async () => {
         const cb = vi.fn()
         vector.getDiscreteInput(0, 1, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(
           expect.objectContaining({ modbusErrorCode: GATEWAY_TARGET_FAILED }),
           false
@@ -2453,13 +2721,14 @@ describe('ModbusServer', () => {
     })
 
     describe('setCoil', () => {
-      it('sets coil value and emits event', () => {
+      it('sets coil value and emits event', async () => {
         // First ensure data exists
         server.setBool({ uuid, unitId, registerType: 'coils', address: 0, state: false })
         clearWindowCalls()
 
         const cb = vi.fn()
         vector.setCoil(10, true, 1, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(null)
         expect(windows.send).toHaveBeenCalledWith(
           'register_value',
@@ -2474,9 +2743,10 @@ describe('ModbusServer', () => {
         )
       })
 
-      it('refuses a unit id it does not host and leaves it unhosted', () => {
+      it('refuses a unit id it does not host and leaves it unhosted', async () => {
         const cb = vi.fn()
         vector.setCoil(5, true, 1, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(
           expect.objectContaining({ modbusErrorCode: GATEWAY_TARGET_FAILED }),
           0
@@ -2485,15 +2755,17 @@ describe('ModbusServer', () => {
         // The write must not have created the unit it was refused for.
         const getCb = vi.fn()
         vector.getCoil(5, 1, getCb)
+        await answered()
         expect(getCb).toHaveBeenCalledWith(
           expect.objectContaining({ modbusErrorCode: GATEWAY_TARGET_FAILED }),
           false
         )
       })
 
-      it('returns error for invalid unitId', () => {
+      it('returns error for invalid unitId', async () => {
         const cb = vi.fn()
         vector.setCoil(0, true, 300, cb)
+        await answered()
         expect(cb).toHaveBeenCalledWith(
           expect.objectContaining({ modbusErrorCode: SERVER_DEVICE_FAILURE }),
           0
@@ -2717,6 +2989,7 @@ describe('ModbusServer', () => {
 
         const cb = vi.fn()
         vector.getCoil(0, 5, cb)
+        await answered()
         expect(cb).not.toHaveBeenCalled()
       })
 
@@ -2760,13 +3033,16 @@ describe('ModbusServer', () => {
         const vector = await rtuVector()
 
         vector.setCoil(3, true, 0, vi.fn())
+        await answered()
 
         const oneCb = vi.fn()
         vector.getCoil(3, 1, oneCb)
+        await answered()
         expect(oneCb).toHaveBeenCalledWith(null, true)
 
         const twoCb = vi.fn()
         vector.getCoil(3, 2, twoCb)
+        await answered()
         expect(twoCb).toHaveBeenCalledWith(null, true)
       })
 

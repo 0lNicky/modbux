@@ -11,6 +11,7 @@ import {
   defaultConnectionConfig,
   defaultRegisterConfig,
   emptyRegisterMapping,
+  MAIN_SERVER_UUID,
   NumberRegisters,
   RegisterMapping
 } from '@shared'
@@ -21,6 +22,10 @@ import type {
   ScanUnitIdsOutcome,
   WriteOutcome
 } from '../../modbusClient'
+import { ServerFaults } from '../../modbusServer/faults'
+import { ServerRequestLog } from '../../modbusServer/requestLog'
+import type { DropConnectionsOutcome } from '../../modbusServer'
+import type { LoggedTransaction } from '../../modbusClient/transactionLog'
 import { McpToolContext } from '../registry'
 import { createMcpServer } from '../server'
 
@@ -51,6 +56,13 @@ export interface FakeContext extends McpToolContext {
     address: number,
     words: number[]
   ) => void
+  /** The stand-in server's request log, which `server.getRequests` reads. */
+  serverRequests: ServerRequestLog
+  /** The stand-in server's fault rules, which the fault tools read and write. */
+  serverFaults: ServerFaults
+  /** The uuids `server.hasServer` knows. The main server's is among them. */
+  knownServers: Set<string>
+  dropConnections: ReturnType<typeof vi.fn<(uuid: string) => DropConnectionsOutcome>>
   read: ReturnType<typeof vi.fn<() => Promise<ReadOutcome>>>
   scanRegisters: ReturnType<typeof vi.fn<McpToolContext['client']['scanRegisters']>>
   scanUnitIds: ReturnType<typeof vi.fn<McpToolContext['client']['scanUnitIds']>>
@@ -61,6 +73,9 @@ export interface FakeContext extends McpToolContext {
   stopPollingAndWait: ReturnType<typeof vi.fn<() => Promise<void>>>
   writeRaw: ReturnType<typeof vi.fn<(request: RawWriteRequest) => Promise<WriteOutcome>>>
   send: ReturnType<typeof vi.fn>
+  /** What the stand-in client has logged, oldest first. `mark` counts them. */
+  logTransaction: (transaction: LoggedTransaction) => void
+  transactions: ReturnType<typeof vi.fn<McpToolContext['client']['transactions']>>
 }
 
 /**
@@ -88,6 +103,10 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
         (_, offset) => serverWords.get(wordKey(uuid, unitId, registerType, address + offset)) ?? 0
       )
   )
+  const serverRequests = new ServerRequestLog()
+  const serverFaults = new ServerFaults({ onChange: () => undefined })
+  const knownServers = new Set([MAIN_SERVER_UUID])
+  const dropConnections = vi.fn<(uuid: string) => DropConnectionsOutcome>(() => ({ dropped: 0 }))
   const registerConfig = { ...defaultRegisterConfig }
   const connectionConfig = { ...defaultConnectionConfig, unitId: 7 }
 
@@ -122,6 +141,22 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
   const writeRaw = vi.fn<(request: RawWriteRequest) => Promise<WriteOutcome>>(async () => ({
     written: true
   }))
+  const logged: LoggedTransaction[] = []
+  const transactions = vi.fn<McpToolContext['client']['transactions']>(
+    ({ limit, sinceTimestamp, failedOnly, afterMark } = {}) => {
+      const matching = logged
+        .slice(afterMark ?? 0)
+        .filter(
+          (transaction) =>
+            (sinceTimestamp === undefined || transaction.timestamp >= sinceTimestamp) &&
+            (!failedOnly ||
+              transaction.errorMessage !== undefined ||
+              transaction.timeout ||
+              transaction.exceptionCode !== undefined)
+        )
+      return limit === undefined ? matching : matching.slice(Math.max(0, matching.length - limit))
+    }
+  )
   const send = vi.fn(async (name: string, payload?: unknown) => {
     const answer = answers[name]
     if (answer) return answer(payload)
@@ -139,6 +174,8 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
       startPollingWhenSettled,
       stopPollingAndWait,
       writeRaw,
+      transactions,
+      transactionMark: () => logged.length,
       get state() {
         return clientState
       },
@@ -157,7 +194,17 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
       }
     },
     rendererCommands: { send: send as unknown as McpToolContext['rendererCommands']['send'] },
-    server: { readRegisters },
+    server: {
+      readRegisters,
+      getRequests: (uuid, filter) => serverRequests.list(uuid, filter),
+      hasServer: (uuid) => knownServers.has(uuid),
+      // Main's own check: a uuid it does not know gets no rules.
+      setFaults: (uuid, rules) =>
+        knownServers.has(uuid) ? serverFaults.set(uuid, rules) : undefined,
+      getFaults: (uuid) => serverFaults.status(uuid),
+      clearFaults: (uuid) => serverFaults.clear(uuid),
+      dropConnections
+    },
     mainWindowOpen: () => mainWindowOpen,
     allowWrites: () => allowWrites,
     setClientState: (state) => {
@@ -183,6 +230,10 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
         serverWords.set(wordKey(uuid, unitId, registerType, address + offset), word)
       }
     },
+    serverRequests,
+    serverFaults,
+    knownServers,
+    dropConnections,
     read,
     scanRegisters,
     scanUnitIds,
@@ -191,7 +242,11 @@ export const fakeContext = (answers: CommandAnswers = {}): FakeContext => {
     startPollingWhenSettled,
     stopPollingAndWait,
     writeRaw,
-    send
+    send,
+    transactions,
+    logTransaction: (transaction) => {
+      logged.push(transaction)
+    }
   }
 }
 
