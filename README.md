@@ -16,7 +16,7 @@ Do not build from source.
 1. Download the installer for my OS and CPU from the latest release, and install it:
    macOS .dmg (arm64 for Apple silicon, x64 for Intel), Windows x64-setup.exe, Linux
    .deb or .AppImage. For example: gh release download -R 0lNicky/modbux --pattern "*arm64.dmg"
-   If macOS says the app is damaged, tell me; I open it with right-click, Open.
+   On macOS, run xattr -dr com.apple.quarantine /Applications/Modbux.app before starting it.
    Then start Modbux.
 2. Ask me to open the Modbux window, press the settings button on the Home screen,
    open the MCP page and switch "Enable MCP" on. It is off by default and only I can
@@ -134,7 +134,11 @@ Modbux 在單一應用程式中支援 Modbus TCP、RTU 與 RTU over TCP，可為
 
 **需 macOS 12 以上版本。** Modbux 2.3 升級至 Electron 41，不再支援 Catalina 或 Big Sur。Modbux 2.2.1 仍支援舊版系統，並保留於[上游 releases 頁面](https://github.com/ploxc/modbux/releases)。
 
-⚠️ **首次開啟**：對應用程式按右鍵並選擇「打開」（Open），或至「系統設定 → 隱私權與安全性 → 強制打開」（Open Anyway）。
+⚠️ **首次開啟前**：Modbux 沒有 Apple 的開發者簽章，macOS 會擋下下載來的 App。將 Modbux 拖入「應用程式」後，在終端機執行：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Modbux.app
+```
 
 ### Linux
 

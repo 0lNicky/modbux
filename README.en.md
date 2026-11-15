@@ -16,7 +16,7 @@ Do not build from source.
 1. Download the installer for my OS and CPU from the latest release, and install it:
    macOS .dmg (arm64 for Apple silicon, x64 for Intel), Windows x64-setup.exe, Linux
    .deb or .AppImage. For example: gh release download -R 0lNicky/modbux --pattern "*arm64.dmg"
-   If macOS says the app is damaged, tell me; I open it with right-click, Open.
+   On macOS, run xattr -dr com.apple.quarantine /Applications/Modbux.app before starting it.
    Then start Modbux.
 2. Ask me to open the Modbux window, press the settings button on the Home screen,
    open the MCP page and switch "Enable MCP" on. It is off by default and only I can
@@ -138,8 +138,12 @@ Download the `.dmg` file from [releases](https://github.com/0lNicky/modbux/relea
 **macOS 12 or newer.** Modbux 2.3 moved to Electron 41, which does not run on Catalina or
 Big Sur. Modbux 2.2.1 still does, and stays on the [upstream releases page](https://github.com/ploxc/modbux/releases).
 
-⚠️ **First time opening**: Right-click the app and select "Open"
-(or go to System Preferences → Security & Privacy → "Open Anyway")
+⚠️ **Before the first launch**: Modbux has no Apple developer signature, so macOS blocks the downloaded app.
+After dragging Modbux into Applications, run this in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Modbux.app
+```
 
 ### Linux
 
