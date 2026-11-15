@@ -93,7 +93,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "fast-equals": "^5.4.0",
     "gif-encoder-2": "^1.0.5",
-    "happy-dom": "^20.11.13",
+    "happy-dom": "^21.0.4",
     "mutative": "^1.3.0",
     "notistack": "^3.0.2",
     "pngjs": "^7.0.0",
