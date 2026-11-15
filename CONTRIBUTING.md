@@ -356,7 +356,7 @@ generic driver claims the device. Every `test:all:*` ends with this round, and
 
 ## Reporting bugs
 
-Use the [bug report template](https://github.com/ploxc/modbux/issues/new?template=bug_report.md). Include:
+Use the [bug report template](https://github.com/fengchyunbih/modbux/issues/new?template=bug_report.md). Include:
 
 - Modbux version
 - OS and version
@@ -366,7 +366,7 @@ Use the [bug report template](https://github.com/ploxc/modbux/issues/new?templat
 
 ## Feature requests
 
-Use the [feature request template](https://github.com/ploxc/modbux/issues/new?template=feature_request.md). Explain the problem you're solving, not just the solution you want.
+Use the [feature request template](https://github.com/fengchyunbih/modbux/issues/new?template=feature_request.md). Explain the problem you're solving, not just the solution you want.
 
 ## License
 

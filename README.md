@@ -310,7 +310,7 @@ yarn build:linux
 
 ## 參與貢獻
 
-本 Fork 儲存庫已關閉 Issues 功能。請針對 [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux) 的 `develop` 分支提出 Pull Request，相關規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。若為上游應用程式本身的錯誤，請回報至 [ploxc/modbux](https://github.com/ploxc/modbux/issues)。
+回報錯誤或提出功能需求，請至 [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux/issues) 開 Issue。要貢獻程式碼，請針對 `develop` 分支提出 Pull Request，相關規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 授權條款
 

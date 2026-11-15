@@ -350,7 +350,7 @@ yarn build:linux
 
 ## Contributing
 
-This fork has issues disabled. Open a pull request into `develop` on [fengchyunbih/modbux](https://github.com/fengchyunbih/modbux). See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules. A bug in the upstream app goes to [ploxc/modbux](https://github.com/ploxc/modbux/issues).
+Report a bug or request a feature in the [issues on fengchyunbih/modbux](https://github.com/fengchyunbih/modbux/issues). To contribute code, open a pull request into `develop`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules.
 
 ## License
 
