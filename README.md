@@ -2,7 +2,7 @@
 
 [English](./README.en.md) | 正體中文
 
-> 本專案 Fork 自 [ploxc](https://github.com/ploxc) 開發的 [ploxc/modbux](https://github.com/ploxc/modbux)，新增了 MCP 伺服器，讓 AI 代理程式可直接操控 Client 與 Server。
+> 本專案 Fork 自 [ploxc](https://github.com/ploxc) 開發的 [ploxc/modbux](https://github.com/ploxc/modbux)。
 
 ## 交由 AI 代理程式安裝
 

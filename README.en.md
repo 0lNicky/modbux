@@ -2,7 +2,7 @@
 
 English | [正體中文](./README.md)
 
-> A fork of [ploxc/modbux](https://github.com/ploxc/modbux) by [ploxc](https://github.com/ploxc). It adds an MCP server, so an AI agent can drive the client and the server.
+> A fork of [ploxc/modbux](https://github.com/ploxc/modbux) by [ploxc](https://github.com/ploxc).
 
 ## Let an AI agent install it
 
