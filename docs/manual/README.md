@@ -43,7 +43,7 @@
 | 作業系統 | 安裝套件 | 最低需求與啟動方式 |
 | --- | --- | --- |
 | **Windows** | `modbux-<version>-x64-setup.exe` | Windows 10/11 (x64)。執行安裝程式；若出現 Windows SmartScreen 提示，點擊 **More info → Run anyway**（其他資訊 → 仍要執行）。 |
-| **macOS** | `modbux-<version>-arm64.dmg` / `modbux-<version>-x64.dmg` | macOS 12+（Apple Silicon 選 `arm64`，Intel 選 `x64`）。將 `Modbux.app` 拖曳至 `/Applications`，首次開啟若遭 Gatekeeper 阻擋，可對應用程式按右鍵選擇「打開」，或於終端機執行 `xattr -cr /Applications/Modbux.app`。 |
+| **macOS** | `modbux-<version>-arm64.dmg` / `modbux-<version>-x64.dmg` | macOS 12+（Apple Silicon 選 `arm64`，Intel 選 `x64`）。將 `Modbux.app` 拖曳至 `/Applications`，首次開啟前，於終端機執行 `xattr -dr com.apple.quarantine /Applications/Modbux.app`。 |
 | **Linux (`.deb`)** | `modbux_<version>_amd64.deb` / `modbux_<version>_arm64.deb` | 執行 `sudo apt install ./modbux_<version>_amd64.deb`，再執行 `modbux`。 |
 | **Linux (`.AppImage`)** | `modbux-<version>-<arch>.AppImage` | 執行 `chmod +x modbux-<version>-<arch>.AppImage && ./modbux-<version>-<arch>.AppImage`。 |
 
@@ -784,7 +784,7 @@ Modbux 關閉重開後會自動保留以下設定：
 - **原因**：預先建置的 `.dmg` 未包含 Apple Developer ID 簽章與公證，macOS 下載後會附加 `com.apple.quarantine` 延伸屬性。
 - **解決方式**：開啟終端機執行：
   ```bash
-  xattr -cr /Applications/Modbux.app
+  xattr -dr com.apple.quarantine /Applications/Modbux.app
   ```
 
 ### 8.4 MCP 伺服器顯示 `Error` 或無法連線
