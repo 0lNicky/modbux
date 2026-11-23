@@ -8,6 +8,7 @@ import { UnitIdString, UnitIdStringSchema } from './unitid'
 import {
   FLOAT32_MAX,
   getAddressFitError,
+  getRampStepError,
   getValueRangeError,
   isIntegerDataType,
   MAX_UTF8_LENGTH
@@ -256,6 +257,9 @@ export const RegisterParamsSchema = RegisterParamsBasePartSchema.and(
     issue('step', 'A ramp step cannot be 0')
   } else if (isIntegerDataType(params.dataType) && !Number.isInteger(step)) {
     issue('step', `A ${params.dataType} ramp steps by a whole number`)
+  } else {
+    const stepError = getRampStepError(params.dataType, step)
+    if (stepError) issue('step', stepError)
   }
 })
 export type RegisterParams = z.infer<typeof RegisterParamsSchema>

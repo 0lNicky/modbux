@@ -345,6 +345,47 @@ export const getValueRangeError = (dataType: DataType, value: number): string | 
 /** The largest finite float32, which `writeFloatBE` turns anything above into Infinity. */
 export const FLOAT32_MAX = 3.4028234663852886e38
 
+/** The decimals the add dialog's Step field keeps. */
+export const RAMP_STEP_DECIMALS = 7
+
+/**
+ * The largest step a ramp on `dataType` takes, either way.
+ *
+ * An integer type takes its own span, which is what the Step field masks to.
+ * A float or double takes `Number.MAX_SAFE_INTEGER`, below which the Step
+ * field writes the number without an exponent and loses no whole digit.
+ */
+export const rampStepLimit = (dataType: DataType): number => {
+  if (isIntegerDataType(dataType)) {
+    const { min, max } = getMinMaxValues(dataType)
+    return max - min
+  }
+  return Number.MAX_SAFE_INTEGER
+}
+
+/**
+ * Why `step` is not a ramp step on `dataType` that the add dialog shows as it
+ * is, or nothing. A step the Step field cannot show comes back from an edit
+ * as the number the field made of it.
+ */
+export const getRampStepError = (dataType: DataType, step: number): string | undefined => {
+  const limit = rampStepLimit(dataType)
+  if (!(Math.abs(step) <= limit)) {
+    return `A ${dataType} ramp step has to be between -${limit} and ${limit}`
+  }
+  if (!isIntegerDataType(dataType) && Number(step.toFixed(RAMP_STEP_DECIMALS)) !== step) {
+    return `A ${dataType} ramp step has at most ${RAMP_STEP_DECIMALS} decimals`
+  }
+  return undefined
+}
+
+/**
+ * A ramp step as the Step field shows it: no exponent, and no trailing zeros.
+ * `String(1e-7)` is `1e-7`, which the field reads as 17.
+ */
+export const formatRampStep = (step: number): string =>
+  step.toFixed(RAMP_STEP_DECIMALS).replace(/\.?0+$/, '')
+
 export const getUsedAddresses = (registers: RegisterParams[]): number[] => {
   const addressSet = new Set<number>()
   registers.forEach((p) => {

@@ -611,6 +611,56 @@ describe('Server RegisterParamsSchema — ramp generator', () => {
     expect(RegisterParamsSchema.safeParse(float).success).toBe(true)
   })
 
+  // The Step field masks to the type's span, so a larger stored step came back
+  // from the edit dialog as the span.
+  it.each([
+    ['uint16', 65535],
+    ['int16', 65535],
+    ['uint32', 4294967295]
+  ] as const)('holds a %s ramp step to the span of the type, %d', (dataType, span) => {
+    expect(RegisterParamsSchema.safeParse({ ...ramp, dataType, step: span }).success).toBe(true)
+    expect(RegisterParamsSchema.safeParse({ ...ramp, dataType, step: -span }).success).toBe(true)
+    expect(issuePaths({ ...ramp, dataType, step: span + 1 })).toContainEqual(['step'])
+    expect(issuePaths({ ...ramp, dataType, step: -span - 1 })).toContainEqual(['step'])
+  })
+
+  it('keeps a step larger than the ramp range but inside the type span', () => {
+    const overshoot = { ...ramp, start: 5, step: 100, min: 0, max: 10 }
+    expect(RegisterParamsSchema.safeParse(overshoot).success).toBe(true)
+  })
+
+  // The Step field writes no exponent and keeps seven decimals, so a step it
+  // cannot show came back from the edit dialog as a different number.
+  it.each(['float', 'double'] as const)(
+    'holds a %s ramp step to what the Step field shows',
+    (dataType) => {
+      const accepts = (step: number): boolean =>
+        RegisterParamsSchema.safeParse({ ...ramp, dataType, min: -1e20, max: 1e20, step }).success
+      expect(accepts(0.1)).toBe(true)
+      expect(accepts(0.0000001)).toBe(true)
+      expect(accepts(Number.MAX_SAFE_INTEGER)).toBe(true)
+      expect(accepts(0.12345678)).toBe(false)
+      expect(accepts(1e-10)).toBe(false)
+      expect(accepts(Number.MAX_SAFE_INTEGER + 1)).toBe(false)
+      expect(accepts(1e21)).toBe(false)
+    }
+  )
+
+  // `start + n * step` overflows to Infinity at n = 2 for this step. Held to
+  // `Number.MAX_SAFE_INTEGER`, a step reaches that only after about 1e292 ticks.
+  it('rejects a double step large enough to overflow start plus two steps', () => {
+    const overflowing = {
+      ...ramp,
+      dataType: 'double',
+      start: -1.5e308,
+      step: 1e308,
+      min: -1.5e308,
+      max: 1.5e308,
+      restart: false
+    }
+    expect(issuePaths(overflowing)).toEqual([['step']])
+  })
+
   it('rejects a fixed register carrying mode', () => {
     const fixed = {
       address: 0,

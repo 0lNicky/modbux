@@ -12,7 +12,13 @@ import { meme } from '@renderer/components/shared/inputs/meme'
 import { MaskInputProps } from '@renderer/components/shared/inputs/types'
 import { forwardRef } from 'react'
 import { IMaskInput } from 'react-imask'
-import { MAX_UTF8_LENGTH, notEmpty, registerWidth } from '@shared'
+import {
+  MAX_UTF8_LENGTH,
+  notEmpty,
+  RAMP_STEP_DECIMALS,
+  rampStepLimit,
+  registerWidth
+} from '@shared'
 import { useMinMaxInteger } from '@renderer/hooks'
 
 const AddressInputForward = forwardRef<HTMLInputElement, MaskInputProps>((props, ref) => {
@@ -137,21 +143,24 @@ StartInputForward.displayName = 'StartInput'
 export const StartInput = meme(StartInputForward)
 
 /**
- * A step runs either way across the whole span of the type, so an unsigned
- * type takes a negative one too.
+ * A step runs either way up to `rampStepLimit`, so an unsigned type takes a
+ * negative one too. The limit and the decimals are the ones
+ * `RegisterParamsSchema` holds a ramp step to, so a step typed here is one the
+ * schema takes, and a stored one comes back unchanged.
  */
 const StepInputForward = forwardRef<HTMLInputElement, MaskInputProps>((props, ref) => {
   const { set, ...other } = props
   const dataType = useAddRegisterZustand((z) => z.dataType)
-  const { min, max, integer } = useMinMaxInteger(dataType)
-  const span = max - min
+  const { integer } = useMinMaxInteger(dataType)
+  const limit = rampStepLimit(dataType)
 
   return (
     <IMaskInput
       {...other}
       {...decimalMask(integer)}
-      min={-span}
-      max={span}
+      scale={integer ? 0 : RAMP_STEP_DECIMALS}
+      min={-limit}
+      max={limit}
       autofix
       inputRef={ref}
       onAccept={(value) => set(value, notEmpty(value))}

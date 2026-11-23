@@ -9,6 +9,7 @@ import { FixedOrGenerator, ValueParameters } from './valueParameters'
 import { AddressField, DataTypeSelect, CommentField } from './registerFields'
 import { AddButtons, DeleteButton } from './addRegisterActions'
 import { FIELD_DEFAULTS, inTimestampWindow, isTimestampType } from './addRegister.zustand.helpers'
+import { formatRampStep } from '@shared'
 
 const AddRegister = meme(() => {
   const edit = useAddRegisterZustand((z) => z.serverRegisterEdit !== undefined)
@@ -78,7 +79,10 @@ const AddRegister = meme(() => {
     // ramp of its own gets the defaults, so switching to Ramp lands on them.
     addRegisterZustand.setGeneratorMode(mode ?? 'random')
     addRegisterZustand.setStart(start === undefined ? FIELD_DEFAULTS.start : String(start), true)
-    addRegisterZustand.setStep(step === undefined ? FIELD_DEFAULTS.step : String(step), true)
+    addRegisterZustand.setStep(
+      step === undefined ? FIELD_DEFAULTS.step : formatRampStep(step),
+      true
+    )
     addRegisterZustand.setRestart(restart ?? true)
 
     if (dataType === 'utf8') {

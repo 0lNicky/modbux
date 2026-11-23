@@ -3,7 +3,7 @@
 import { act, render, screen, within } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { ServerRegister } from '@shared'
+import { RegisterParamsSchema, type ServerRegister } from '@shared'
 
 // ─── Store stub ──────────────────────────────────────────────────────
 // The real server store persists through window.api on import, which is far
@@ -456,4 +456,84 @@ describe('ramp mode', () => {
     expect(submitButton()).toBeDisabled()
     expect(removeButton()).toBeEnabled()
   })
+})
+
+/** The params the dialog last handed the server store. */
+const submittedParams = (): unknown => {
+  const call = serverState.addRegister.mock.calls.at(-1) as unknown as
+    | [{ params: unknown }]
+    | undefined
+  if (!call) throw new Error('the dialog submitted nothing')
+  return call[0].params
+}
+
+/** A ramp like `rampAt100`, as `dataType` and stepping by `step`. */
+const rampOf = (
+  dataType: 'uint16' | 'int16' | 'float' | 'double',
+  step: number
+): ServerRegister[number] => ({
+  value: 0,
+  params: {
+    address: 100,
+    registerType: 'holding_registers',
+    dataType,
+    comment: 'humidity',
+    min: 0,
+    max: 10,
+    interval: 2000,
+    mode: 'ramp',
+    start: 5,
+    step,
+    restart: false
+  }
+})
+
+// The Step field masked to the type's span, and the edit effect hands it the
+// stored step as `String(step)`. A step the field cannot show came back from
+// the mask changed, and saving an edit to the comment saved that change.
+describe('a ramp step through an edit of another field', () => {
+  beforeEach(() => {
+    useAddRegisterZustand.getState().resetToDefaults()
+    serverState.addRegister.mockClear()
+  })
+
+  it.each([
+    ['uint16', 65535],
+    ['uint16', -65535],
+    ['int16', 65535],
+    ['float', 0.0000001],
+    ['float', 0.1234567],
+    ['double', Number.MAX_SAFE_INTEGER],
+    ['double', -0.5]
+  ] as const)('keeps a %s step of %d', async (dataType, step) => {
+    const register = rampOf(dataType, step)
+    expect(RegisterParamsSchema.safeParse(register.params).success).toBe(true)
+    const user = userEvent.setup()
+    renderEditing(register)
+
+    await user.type(fieldInput('add-reg-comment-input'), '!')
+    await user.click(submitButton())
+
+    expect(submittedParams()).toMatchObject({ comment: 'humidity!', step })
+  })
+
+  it.each([
+    ['uint16', '70000', 65535],
+    ['double', '99999999999999999999', Number.MAX_SAFE_INTEGER],
+    ['float', '0.123456789', 0.1234567]
+  ] as const)(
+    'takes from a %s Step field only a step the schema takes',
+    async (dataType, typed, step) => {
+      const user = userEvent.setup()
+      renderEditing(rampOf(dataType, 1))
+
+      const stepField = fieldInput('add-reg-step-input')
+      await user.clear(stepField)
+      await user.type(stepField, typed)
+      await user.click(submitButton())
+
+      expect(submittedParams()).toMatchObject({ step })
+      expect(RegisterParamsSchema.safeParse(submittedParams()).success).toBe(true)
+    }
+  )
 })
