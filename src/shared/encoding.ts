@@ -309,6 +309,13 @@ const RANGE_CHECKED_TYPES: readonly DataType[] = [
 ]
 
 /**
+ * Whether `dataType` holds whole numbers only: the seven types
+ * `useMinMaxInteger` masks to integers, which are the ones range checked above.
+ */
+export const isIntegerDataType = (dataType: DataType): boolean =>
+  RANGE_CHECKED_TYPES.includes(dataType)
+
+/**
  * Why `createRegisters` cannot encode `value` as `dataType`, or nothing.
  *
  * `RegisterParamsSchema` bounded the address and left the value bare, so a

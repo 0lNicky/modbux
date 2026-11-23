@@ -51,7 +51,11 @@ const ServerBitMapDetail = meme(({ register }: ServerBitMapDetailProps): JSX.Ele
             value: newValue,
             min: undefined,
             max: undefined,
-            interval: undefined
+            interval: undefined,
+            mode: undefined,
+            start: undefined,
+            step: undefined,
+            restart: undefined
           }
         })
       } finally {

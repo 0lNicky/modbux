@@ -522,6 +522,86 @@ describe('Server RegisterParamsSchema — what a generator draws between', () =>
   })
 })
 
+describe('Server RegisterParamsSchema — ramp generator', () => {
+  const random = {
+    address: 0,
+    registerType: 'holding_registers',
+    dataType: 'uint16',
+    comment: '',
+    min: 0,
+    max: 10,
+    interval: 1000
+  }
+  const ramp = { ...random, mode: 'ramp', start: 0, step: 1 }
+
+  const issuePaths = (input: unknown): (string | number)[][] => {
+    const result = RegisterParamsSchema.safeParse(input)
+    expect(result.success).toBe(false)
+    return result.error?.issues.map((issue) => issue.path) ?? []
+  }
+
+  it('accepts a ramp, with restart on or off', () => {
+    expect(RegisterParamsSchema.safeParse(ramp).success).toBe(true)
+    expect(RegisterParamsSchema.safeParse({ ...ramp, restart: false }).success).toBe(true)
+  })
+
+  it('accepts a stored random generator, which carries no mode', () => {
+    expect(RegisterParamsSchema.safeParse(random).success).toBe(true)
+  })
+
+  it('rejects a step of 0', () => {
+    expect(issuePaths({ ...ramp, step: 0 })).toContainEqual(['step'])
+  })
+
+  it.each(['step', 'start'] as const)('rejects a ramp without %s', (field) => {
+    const incomplete = Object.fromEntries(Object.entries(ramp).filter(([key]) => key !== field))
+    expect(issuePaths(incomplete)).toContainEqual([field])
+  })
+
+  it('rejects a min above the max', () => {
+    expect(issuePaths({ ...ramp, min: 10, max: 0, start: 5 })).toContainEqual(['min'])
+  })
+
+  it('rejects a start outside min and max', () => {
+    expect(issuePaths({ ...ramp, start: 11 })).toContainEqual(['start'])
+  })
+
+  it('rejects a fractional step or start on an integer type', () => {
+    expect(issuePaths({ ...ramp, step: 0.5 })).toContainEqual(['step'])
+    expect(issuePaths({ ...ramp, start: 0.5 })).toContainEqual(['start'])
+  })
+
+  it('accepts a fractional step on a float', () => {
+    expect(RegisterParamsSchema.safeParse({ ...ramp, dataType: 'float', step: 0.5 }).success).toBe(
+      true
+    )
+  })
+
+  it.each(['unix', 'datetime', 'utf8', 'bitmap', 'none'])('rejects a ramp on %s', (dataType) => {
+    expect(issuePaths({ ...ramp, dataType })).toContainEqual(['mode'])
+  })
+
+  it.each([
+    ['start', 0],
+    ['step', 1],
+    ['restart', true]
+  ])('rejects a random generator carrying %s', (field, fieldValue) => {
+    expect(issuePaths({ ...random, [field]: fieldValue })).toContainEqual([field])
+  })
+
+  it('rejects a fixed register carrying mode', () => {
+    const fixed = {
+      address: 0,
+      registerType: 'holding_registers',
+      dataType: 'uint16',
+      comment: '',
+      value: 1,
+      mode: 'ramp'
+    }
+    expect(RegisterParamsSchema.safeParse(fixed).success).toBe(false)
+  })
+})
+
 // Nothing between the keyboard and the wire clamped: `LengthField` passed no
 // `max`, `UintInput` defaults to 65535, `setLength` stores the number as given,
 // `length` was `z.number().int().positive()`, and `_scanUnitIds` hands it to
