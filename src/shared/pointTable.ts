@@ -290,6 +290,27 @@ const scales = ({ scalingFactor, interpolate }: PointScaling): boolean =>
   (scalingFactor !== undefined && scalingFactor !== 1) || interpolate !== undefined
 
 /**
+ * `value` through the inverse of `scaleValue`, before any data type is asked
+ * whether it holds the answer: the interpolation undone, then the factor.
+ * `engineeringToRaw` refuses the scalings this cannot undo before calling it.
+ */
+const unscale = (value: number, { scalingFactor = 1, interpolate }: PointScaling): number => {
+  const scaled = interpolate
+    ? interpolate.x1 +
+      ((value - interpolate.y1) * (interpolate.x2 - interpolate.x1)) /
+        (interpolate.y2 - interpolate.y1)
+    : value
+  return scaled / scalingFactor
+}
+
+/** The engineering distance one raw unit covers under `scaling`. */
+const resolutionOf = ({ scalingFactor = 1, interpolate }: PointScaling): number =>
+  Math.abs(
+    scalingFactor *
+      (interpolate ? (interpolate.y2 - interpolate.y1) / (interpolate.x2 - interpolate.x1) : 1)
+  )
+
+/**
  * The raw value whose engineering value is `value`, by the inverse of
  * `scaleValue` (`engineeringValue.ts`), or why there is none.
  *
@@ -318,22 +339,17 @@ export const engineeringToRaw = (
     }
   }
 
-  let scaled = value
   const { interpolate } = scaling
-  if (interpolate) {
-    const { x1, x2, y1, y2 } = interpolate
-    if (x1 === x2 || y1 === y2) {
-      return {
-        ok: false,
-        reason: 'The interpolation answers one value everywhere, so no raw value maps back'
-      }
+  if (interpolate && (interpolate.x1 === interpolate.x2 || interpolate.y1 === interpolate.y2)) {
+    return {
+      ok: false,
+      reason: 'The interpolation answers one value everywhere, so no raw value maps back'
     }
-    scaled = x1 + ((value - y1) * (x2 - x1)) / (y2 - y1)
   }
-
-  const factor = scaling.scalingFactor ?? 1
-  if (factor === 0) return { ok: false, reason: 'A scaling factor of 0 maps every raw value to 0' }
-  let raw = scaled / factor
+  if (scaling.scalingFactor === 0) {
+    return { ok: false, reason: 'A scaling factor of 0 maps every raw value to 0' }
+  }
+  let raw = unscale(value, scaling)
 
   if (WHOLE_NUMBER_TYPES.includes(dataType)) {
     if (!isWhole(raw)) {
@@ -486,9 +502,17 @@ const rampGenerator = (
   }
   const rawStart = engineeringToRaw(start, dataType, scaling)
   if (!rawStart.ok) return reject(`Ramp start: ${rawStart.reason}`)
-  const rawEnd = engineeringToRaw(start + step, dataType, scaling)
-  if (!rawEnd.ok) return reject(`Ramp step: ${rawEnd.reason}`)
-  const rawStep = rawEnd.raw - rawStart.raw
+  // `start + step` is unscaled without asking the data type whether it holds
+  // it, because the ramp never writes it: a step past a bound restarts or
+  // holds. `rawStart` has already refused a scaling `unscale` cannot undo.
+  const end = unscale(start + step, scaling)
+  const whole = WHOLE_NUMBER_TYPES.includes(dataType)
+  const rawStep = (whole ? Math.round(end) : end) - rawStart.raw
+  if (whole && step !== 0 && (!isWhole(end) || rawStep === 0)) {
+    return reject(
+      `Ramp step: ${step} is smaller than, or not a multiple of, the resolution of ${resolutionOf(scaling)} this scaling gives a ${dataType}`
+    )
+  }
   if (rawStep === 0) return reject('The ramp step is 0 after scaling')
   const rawMin = engineeringToRaw(min, dataType, scaling)
   if (!rawMin.ok) return reject(`Generator min: ${rawMin.reason}`)

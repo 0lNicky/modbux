@@ -742,10 +742,6 @@ describe('validatePointTable, server values', () => {
         { dataType: 'uint16', generator: { ...ramp, start: -1 } },
         'Ramp start: Raw value -1: A uint16 value has to be between 0 and 65535'
       ],
-      [
-        { dataType: 'uint16', generator: { ...ramp, start: 65535, step: 1, min: 0, max: 65535 } },
-        'Ramp step: Raw value 65536: A uint16 value has to be between 0 and 65535'
-      ],
       [{ dataType: 'uint16', generator: { ...ramp, step: 0 } }, 'The ramp step is 0 after scaling'],
       [
         { dataType: 'uint16', generator: { ...ramp, start: 11, max: 10 } },
@@ -765,6 +761,49 @@ describe('validatePointTable, server values', () => {
       ]
     ] as const)('rejects %j', (fields, reason) => {
       expect(reasons(resolve(fields))).toEqual([reason])
+    })
+
+    // `start + step` is 65536, which a uint16 cannot hold, and was checked as
+    // a value to write. The ramp writes 65535 and holds on its first tick.
+    it('accepts a uint16 ramp whose start sits on the bound its step walks toward', () => {
+      const report = resolve({
+        dataType: 'uint16',
+        generator: { mode: 'ramp', start: 65535, step: 1, min: 0, max: 65535, restart: false }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({ start: 65535, step: 1 })
+    })
+
+    it.each([
+      ['uint16', { scalingFactor: 2 }, 0.1, 2],
+      ['uint16', { scalingFactor: 2 }, 3, 2],
+      ['int16', { scalingFactor: -2 }, 3, 2],
+      ['uint16', { interpolate: { x1: 0, x2: 10, y1: 0, y2: 100 } }, 5, 10]
+    ] as const)(
+      'names the resolution a %s under %j gives when a step of %d is not a whole raw step',
+      (dataType, scaling, step, resolution) => {
+        const report = resolve({
+          dataType,
+          ...scaling,
+          generator: { mode: 'ramp', start: 20, step, min: 0, max: 100 }
+        })
+        expect(reasons(report)).toEqual([
+          `Ramp step: ${step} is smaller than, or not a multiple of, the resolution of ${resolution} this scaling gives a ${dataType}`
+        ])
+      }
+    )
+
+    // Raw 400000000.1 is whole to `isWhole`, whose tolerance grows with the
+    // value, so the step rounds to 0 raw rather than failing as a fraction.
+    it('names the resolution when a step rounds to 0 raw beside a large start', () => {
+      const report = resolve({
+        dataType: 'uint32',
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 4e9, step: 1, min: 0, max: 4e10 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1 is smaller than, or not a multiple of, the resolution of 10 this scaling gives a uint32'
+      ])
     })
 
     it('rejects a step finer than the scaling resolution with the step reason', () => {
