@@ -345,8 +345,8 @@ export const getValueRangeError = (dataType: DataType, value: number): string | 
 /** The largest finite float32, which `writeFloatBE` turns anything above into Infinity. */
 export const FLOAT32_MAX = 3.4028234663852886e38
 
-/** The decimals the add dialog's Step field keeps. */
-export const RAMP_STEP_DECIMALS = 7
+/** The decimals a float or double ramp holds, and its fields in the add dialog keep. */
+export const RAMP_DECIMALS = 7
 
 /**
  * The largest step a ramp on `dataType` takes, either way.
@@ -363,6 +363,9 @@ export const rampStepLimit = (dataType: DataType): number => {
   return Number.MAX_SAFE_INTEGER
 }
 
+/** `value` rounded to the `RAMP_DECIMALS` decimals a float or double ramp holds. */
+export const toRampDecimals = (value: number): number => Number(value.toFixed(RAMP_DECIMALS))
+
 /**
  * Why `step` is not a ramp step on `dataType` that the add dialog shows as it
  * is, or nothing. A step the Step field cannot show comes back from an edit
@@ -373,21 +376,46 @@ export const getRampStepError = (dataType: DataType, step: number): string | und
   if (!(Math.abs(step) <= limit)) {
     return `A ${dataType} ramp step has to be between -${limit} and ${limit}`
   }
-  if (!isIntegerDataType(dataType) && Number(step.toFixed(RAMP_STEP_DECIMALS)) !== step) {
-    return `A ${dataType} ramp step has at most ${RAMP_STEP_DECIMALS} decimals`
+  if (!isIntegerDataType(dataType) && toRampDecimals(step) !== step) {
+    return `A ${dataType} ramp step has at most ${RAMP_DECIMALS} decimals`
   }
   return undefined
 }
 
-/** `value` rounded to the `RAMP_STEP_DECIMALS` decimals a float or double ramp holds. */
-export const toRampDecimals = (value: number): number => Number(value.toFixed(RAMP_STEP_DECIMALS))
+/**
+ * Why `value` is not a ramp start, min or max on `dataType` that the add
+ * dialog shows as it is and the register can hold, or nothing.
+ *
+ * `writeFloatBE` writes a float past `FLOAT32_MAX` as Infinity, and the
+ * fields keep `RAMP_DECIMALS` decimals. A whole number of any size is shown
+ * in full by `formatRampValue`.
+ */
+export const getRampValueError = (
+  dataType: DataType,
+  field: 'start' | 'min' | 'max',
+  value: number
+): string | undefined => {
+  if (!Number.isFinite(value)) return `A ramp ${field} has to be a finite number`
+  if (dataType === 'float' && Math.abs(value) > FLOAT32_MAX) {
+    return `A float ramp ${field} has to be between -${FLOAT32_MAX} and ${FLOAT32_MAX}`
+  }
+  if (!isIntegerDataType(dataType) && toRampDecimals(value) !== value) {
+    return `A ${dataType} ramp ${field} has at most ${RAMP_DECIMALS} decimals`
+  }
+  return undefined
+}
 
 /**
- * A ramp step as the Step field shows it: no exponent, and no trailing zeros.
- * `String(1e-7)` is `1e-7`, which the field reads as 17.
+ * A ramp field's number as the add dialog shows it: no exponent, and no
+ * trailing zeros. `String(1e-7)` is `1e-7` and `String(3.4e38)` is `3.4e+38`,
+ * which the masks read as 17 and 3.438. From 1e21 up, `toFixed` writes an
+ * exponent too, and every double that large is a whole number `BigInt` writes
+ * out in full.
  */
-export const formatRampStep = (step: number): string =>
-  step.toFixed(RAMP_STEP_DECIMALS).replace(/\.?0+$/, '')
+export const formatRampValue = (value: number): string =>
+  Math.abs(value) < 1e21
+    ? value.toFixed(RAMP_DECIMALS).replace(/\.?0+$/, '')
+    : BigInt(value).toString()
 
 export const getUsedAddresses = (registers: RegisterParams[]): number[] => {
   const addressSet = new Set<number>()

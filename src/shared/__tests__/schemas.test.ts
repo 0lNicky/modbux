@@ -646,6 +646,24 @@ describe('Server RegisterParamsSchema — ramp generator', () => {
     }
   )
 
+  // The Start, Min and Max fields keep seven decimals, so a value with more
+  // came back from the edit dialog as a different number.
+  it.each(['float', 'double'] as const)(
+    'holds a %s ramp start, min and max to the decimals the fields keep',
+    (dataType) => {
+      const float = { ...ramp, dataType, start: 0, min: -1, max: 1 }
+      expect(RegisterParamsSchema.safeParse({ ...float, start: 0.0000001 }).success).toBe(true)
+      expect(issuePaths({ ...float, start: 0.12345678 })).toEqual([['start']])
+      expect(issuePaths({ ...float, min: -1e-10 })).toEqual([['min']])
+      expect(issuePaths({ ...float, max: 0.12345678 })).toEqual([['max']])
+    }
+  )
+
+  it('accepts a stored random float generator with bounds of more decimals, as before', () => {
+    const float = { ...random, dataType: 'float', min: 1e-10, max: 0.123456789 }
+    expect(RegisterParamsSchema.safeParse(float).success).toBe(true)
+  })
+
   // `start + n * step` overflows to Infinity at n = 2 for this step. Held to
   // `Number.MAX_SAFE_INTEGER`, a step reaches that only after about 1e292 ticks.
   it('rejects a double step large enough to overflow start plus two steps', () => {

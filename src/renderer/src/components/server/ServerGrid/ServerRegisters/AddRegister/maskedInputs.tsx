@@ -12,13 +12,7 @@ import { meme } from '@renderer/components/shared/inputs/meme'
 import { MaskInputProps } from '@renderer/components/shared/inputs/types'
 import { forwardRef } from 'react'
 import { IMaskInput } from 'react-imask'
-import {
-  MAX_UTF8_LENGTH,
-  notEmpty,
-  RAMP_STEP_DECIMALS,
-  rampStepLimit,
-  registerWidth
-} from '@shared'
+import { MAX_UTF8_LENGTH, notEmpty, RAMP_DECIMALS, rampStepLimit, registerWidth } from '@shared'
 import { useMinMaxInteger } from '@renderer/hooks'
 
 const AddressInputForward = forwardRef<HTMLInputElement, MaskInputProps>((props, ref) => {
@@ -120,6 +114,7 @@ export const MaxInput = meme(MaxInputForward)
 //
 // Ramp
 
+/** The decimals are the ones `RegisterParamsSchema` holds a ramp start to. */
 const StartInputForward = forwardRef<HTMLInputElement, MaskInputProps>((props, ref) => {
   const { set, ...other } = props
   const dataType = useAddRegisterZustand((z) => z.dataType)
@@ -129,6 +124,7 @@ const StartInputForward = forwardRef<HTMLInputElement, MaskInputProps>((props, r
     <IMaskInput
       {...other}
       {...decimalMask(integer)}
+      scale={integer ? 0 : RAMP_DECIMALS}
       min={min}
       max={max}
       autofix
@@ -158,7 +154,7 @@ const StepInputForward = forwardRef<HTMLInputElement, MaskInputProps>((props, re
     <IMaskInput
       {...other}
       {...decimalMask(integer)}
-      scale={integer ? 0 : RAMP_STEP_DECIMALS}
+      scale={integer ? 0 : RAMP_DECIMALS}
       min={-limit}
       max={limit}
       autofix

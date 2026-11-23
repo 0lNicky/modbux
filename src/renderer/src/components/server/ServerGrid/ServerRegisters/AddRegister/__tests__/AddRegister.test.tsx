@@ -537,3 +537,52 @@ describe('a ramp step through an edit of another field', () => {
     }
   )
 })
+
+/** A float or double ramp at 100 with the bounds and start given. */
+const rampBetween = (
+  dataType: 'float' | 'double',
+  fields: { start: number; min: number; max: number }
+): ServerRegister[number] => ({
+  value: 0,
+  params: {
+    address: 100,
+    registerType: 'holding_registers',
+    dataType,
+    comment: 'humidity',
+    interval: 2000,
+    mode: 'ramp',
+    step: 1,
+    restart: false,
+    ...fields
+  }
+})
+
+// `String(1e-7)` is `1e-7`, which the masks read as 17, so a field written
+// with an exponent opened dirty and saved the number the mask made of it.
+describe('a ramp start, min and max through an edit of another field', () => {
+  beforeEach(() => {
+    useAddRegisterZustand.getState().resetToDefaults()
+    serverState.addRegister.mockClear()
+  })
+
+  it.each([
+    ['float', { start: 0.0000001, min: 0, max: 100 }],
+    ['float', { start: 0, min: -0.0000001, max: 0.1234567 }],
+    ['float', { start: 0, min: -3.4e38, max: 3.4e38 }],
+    ['float', { start: 0, min: -1e21, max: 1e21 }],
+    ['double', { start: 1e20, min: -1e20, max: 1e20 }],
+    ['double', { start: 0, min: -1.5e308, max: 1.5e308 }],
+    ['double', { start: 0, min: -Number.MAX_VALUE, max: Number.MAX_VALUE }]
+  ] as const)('keeps a %s ramp of %j, and opens clean', async (dataType, fields) => {
+    const register = rampBetween(dataType, fields)
+    expect(RegisterParamsSchema.safeParse(register.params).success).toBe(true)
+    const user = userEvent.setup()
+    renderEditing(register)
+    expect(removeButton()).toBeEnabled()
+
+    await user.type(fieldInput('add-reg-comment-input'), '!')
+    await user.click(submitButton())
+
+    expect(submittedParams()).toMatchObject({ comment: 'humidity!', ...fields })
+  })
+})

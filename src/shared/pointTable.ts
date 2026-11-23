@@ -516,7 +516,7 @@ const rampGenerator = (
   const rawStart = engineeringToRaw(start, dataType, scaling)
   if (!rawStart.ok) return reject(`Ramp start: ${rawStart.reason}`)
   const whole = WHOLE_NUMBER_TYPES.includes(dataType)
-  // A float or double ramp holds `RAMP_STEP_DECIMALS` decimals. A scaled raw
+  // A float or double ramp holds `RAMP_DECIMALS` decimals. A scaled raw
   // value is rounded to them, because 20 / 0.3 is 66.66666666666667 and the
   // schema refuses it. An unscaled one is the number given, and the schema
   // refuses it if it has more.

@@ -6,7 +6,7 @@ import { SerialPortOptionsSchema } from './serial'
 import { ConfigByteSwapSchema } from './byteOrder'
 import { UnitIdString, UnitIdStringSchema } from './unitid'
 import {
-  FLOAT32_MAX,
+  getRampValueError,
   getAddressFitError,
   getRampStepError,
   getValueRangeError,
@@ -225,20 +225,14 @@ export const RegisterParamsSchema = RegisterParamsBasePartSchema.and(
     issue('mode', `A ${params.dataType} register cannot ramp`)
   }
 
-  // `getValueRangeError` leaves a float alone, and `writeFloatBE` writes a
-  // value past float32 as Infinity.
-  for (const field of ['min', 'max', 'start', 'step'] as const) {
-    const bound = params[field]
-    if (bound !== undefined && !Number.isFinite(bound)) {
-      issue(field, `A ramp ${field} has to be a finite number`)
-    }
+  for (const field of ['min', 'max', 'start'] as const) {
+    const fieldValue = params[field]
+    if (fieldValue === undefined) continue
+    const valueError = getRampValueError(params.dataType, field, fieldValue)
+    if (valueError) issue(field, valueError)
   }
-  if (params.dataType === 'float') {
-    for (const field of ['min', 'max'] as const) {
-      if (Math.abs(params[field]) > FLOAT32_MAX) {
-        issue(field, `A float ramp ${field} has to be between -${FLOAT32_MAX} and ${FLOAT32_MAX}`)
-      }
-    }
+  if (params.step !== undefined && !Number.isFinite(params.step)) {
+    issue('step', 'A ramp step has to be a finite number')
   }
   if (params.min > params.max) issue('min', 'A ramp needs a min no greater than its max')
 
