@@ -17,6 +17,7 @@ import {
   inTimestampWindow,
   isTimestampType,
   rampFieldErrors,
+  rampValueErrors,
   timestampWindow,
   utf8MaxBytes
 } from './addRegister.zustand.helpers'
@@ -133,7 +134,9 @@ const MinTextField = meme(() => {
   // A ramp reads min and max as bounds, so one above the other is refused
   // there and nowhere else.
   const valid = useAddRegisterZustand(
-    (z) => z.valid.min && !(z.generatorMode === 'ramp' && rampFieldErrors(z).range)
+    (z) =>
+      z.valid.min &&
+      !(z.generatorMode === 'ramp' && (rampFieldErrors(z).range || rampValueErrors(z).min))
   )
 
   const setMin = useAddRegisterZustand.getState().setMin
@@ -159,7 +162,9 @@ const MinTextField = meme(() => {
 
 const MaxTextField = meme(() => {
   const max = useAddRegisterZustand((z) => String(z.max))
-  const valid = useAddRegisterZustand((z) => z.valid.max)
+  const valid = useAddRegisterZustand(
+    (z) => z.valid.max && !(z.generatorMode === 'ramp' && rampValueErrors(z).max)
+  )
 
   const setMax = useAddRegisterZustand.getState().setMax
 
@@ -190,7 +195,9 @@ const MaxTextField = meme(() => {
 
 const StartTextField = meme(() => {
   const start = useAddRegisterZustand((z) => z.start)
-  const valid = useAddRegisterZustand((z) => z.valid.start && !rampFieldErrors(z).start)
+  const valid = useAddRegisterZustand(
+    (z) => z.valid.start && !rampFieldErrors(z).start && !rampValueErrors(z).start
+  )
 
   const setStart = useAddRegisterZustand.getState().setStart
 

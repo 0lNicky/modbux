@@ -11,6 +11,7 @@ import {
   FIELD_DEFAULTS,
   isFormDirty,
   isRampFormValid,
+  rampValueErrors,
   isTimestampType
 } from './addRegister.zustand.helpers'
 
@@ -50,7 +51,16 @@ export const AddButtons = meme(() => {
     if (z.fixed) return z.valid.address && z.valid.value
     const range = z.valid.address && z.valid.min && z.valid.max && z.valid.interval
     if (z.generatorMode === 'random') return range
-    return range && z.valid.start && z.valid.step && isRampFormValid(z)
+    const values = rampValueErrors(z)
+    return (
+      range &&
+      z.valid.start &&
+      z.valid.step &&
+      isRampFormValid(z) &&
+      !values.start &&
+      !values.min &&
+      !values.max
+    )
   })
 
   // A submit waits for main to take the register, and the buttons stay under

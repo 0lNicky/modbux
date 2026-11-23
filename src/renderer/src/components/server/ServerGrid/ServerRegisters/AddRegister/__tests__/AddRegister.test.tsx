@@ -35,6 +35,7 @@ vi.mock('@renderer/context/server.zustand', () => ({
 
 import AddRegister from '../AddRegister'
 import { useAddRegisterZustand } from '../addRegister.zustand'
+import { toRegisterParams } from '../addRegister.zustand.helpers'
 
 const registerAt100: ServerRegister[number] = {
   value: 0,
@@ -584,5 +585,77 @@ describe('a ramp start, min and max through an edit of another field', () => {
     await user.click(submitButton())
 
     expect(submittedParams()).toMatchObject({ comment: 'humidity!', ...fields })
+  })
+})
+
+/** The add dialog on a float or double ramp. */
+const renderAddingRamp = async (dataType: 'float' | 'double'): Promise<void> => {
+  renderAdding()
+  await act(async () => useAddRegisterZustand.getState().setDataType(dataType))
+  await userEvent.setup().click(screen.getByTestId('add-reg-ramp-btn'))
+}
+
+/** The params the dialog would submit as it stands. */
+const dialogParams = (): unknown =>
+  toRegisterParams({ ...useAddRegisterZustand.getState(), registerType: 'holding_registers' })
+
+const FLOAT32_MAX_DIGITS = '340282346638528859811704183484516925440'
+
+describe('a float ramp bound past float32 in the add dialog', () => {
+  beforeEach(() => {
+    useAddRegisterZustand.getState().resetToDefaults()
+    serverState.addRegister.mockClear()
+  })
+
+  it.each([
+    ['add-reg-max-input', '4' + '0'.repeat(38)],
+    ['add-reg-min-input', '-4' + '0'.repeat(38)]
+  ])('marks %s wrong and refuses Add for %s', async (testId, typed) => {
+    const user = userEvent.setup()
+    await renderAddingRamp('float')
+
+    const field = fieldInput(testId)
+    await user.clear(field)
+    await user.type(field, typed)
+
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(submitButton()).toBeDisabled()
+  })
+})
+
+// The pair holds no ramp the dialog submits and the schema refuses: a typed
+// value either reaches the store as a ramp the schema accepts, or Add is off.
+describe('a ramp the add dialog submits', () => {
+  beforeEach(() => {
+    useAddRegisterZustand.getState().resetToDefaults()
+    serverState.addRegister.mockClear()
+  })
+
+  it.each([
+    ['float', 'add-reg-max-input', FLOAT32_MAX_DIGITS, 'submits'],
+    ['float', 'add-reg-max-input', '4' + '0'.repeat(38), 'refuses'],
+    ['float', 'add-reg-min-input', '-' + FLOAT32_MAX_DIGITS, 'submits'],
+    ['float', 'add-reg-min-input', '-4' + '0'.repeat(38), 'refuses'],
+    ['float', 'add-reg-max-input', '0.00000001', 'submits'],
+    ['float', 'add-reg-start-input', '0.12345678', 'submits'],
+    ['double', 'add-reg-max-input', '1' + '0'.repeat(308), 'submits'],
+    ['double', 'add-reg-max-input', '1' + '0'.repeat(309), 'refuses'],
+    ['double', 'add-reg-min-input', '-1' + '0'.repeat(309), 'refuses'],
+    ['double', 'add-reg-max-input', '1' + '0'.repeat(21), 'submits']
+  ] as const)('on %s, with %s at %s, %s', async (dataType, testId, typed, outcome) => {
+    const user = userEvent.setup()
+    await renderAddingRamp(dataType)
+
+    const field = fieldInput(testId)
+    await user.clear(field)
+    await user.type(field, typed)
+
+    if (outcome === 'refuses') {
+      expect(submitButton()).toBeDisabled()
+      expect(RegisterParamsSchema.safeParse(dialogParams()).success).toBe(false)
+      return
+    }
+    await user.click(submitButton())
+    expect(RegisterParamsSchema.safeParse(submittedParams()).success).toBe(true)
   })
 })

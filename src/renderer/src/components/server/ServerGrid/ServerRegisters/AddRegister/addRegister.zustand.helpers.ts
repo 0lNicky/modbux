@@ -5,6 +5,7 @@ import {
   GeneratorMode,
   getAddressFitError,
   getMinMaxValues,
+  getRampValueError,
   NumberRegisters,
   RegisterParams,
   RegisterParamsBasePart,
@@ -310,3 +311,18 @@ export const isRampFormValid = (form: RampFields): boolean => {
   const errors = rampFieldErrors(form)
   return !errors.start && !errors.step && !errors.range
 }
+
+type RampValueFields = Pick<RegisterFormValues, 'dataType' | 'start' | 'min' | 'max'>
+
+/**
+ * Which of a ramp's start, min and max `getRampValueError` refuses, the rule
+ * `RegisterParamsSchema` holds them to. The masks take a float past
+ * `FLOAT32_MAX` and a double past `Number.MAX_VALUE`, so the field says it.
+ */
+export const rampValueErrors = (
+  form: RampValueFields
+): { start: boolean; min: boolean; max: boolean } => ({
+  start: getRampValueError(form.dataType, 'start', Number(form.start)) !== undefined,
+  min: getRampValueError(form.dataType, 'min', Number(form.min)) !== undefined,
+  max: getRampValueError(form.dataType, 'max', Number(form.max)) !== undefined
+})
