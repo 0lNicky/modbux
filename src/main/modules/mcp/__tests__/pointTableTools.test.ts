@@ -597,6 +597,31 @@ describe('server_apply_point_table', () => {
     })
   })
 
+  it('reports a ramp point accepted on a dry run', async () => {
+    const context = serverContext()
+    const client = await connectInMemory(context)
+
+    const result = await client.callTool({
+      name: 'server_apply_point_table',
+      arguments: {
+        port: 503,
+        dryRun: true,
+        points: [
+          {
+            name: 'Humidity',
+            address: 0,
+            registerType: 'holding_registers',
+            dataType: 'uint16',
+            generator: { mode: 'ramp', start: 80, step: -1, min: 20, max: 80, restart: true }
+          }
+        ]
+      }
+    })
+
+    expect(commandNames(context)).toEqual(['server_list'])
+    expect(jsonOf(result)).toMatchObject({ dryRun: true, report: { accepted: 1, rejected: 0 } })
+  })
+
   it("sends the accepted points to the unit the server shows, in the table's byte order", async () => {
     const context = serverContext({
       server_apply_point_table: async () => ({ ...SIM_VALUES, byteOrder: 'CDAB' })
@@ -717,6 +742,54 @@ describe('server_get_values', () => {
           registers: [{ registerType: 'discrete_inputs', address: 0, value: false }]
         }
       ]
+    })
+  })
+
+  it('answers a ramp register with its mode, start, step and restart in raw values', async () => {
+    const context = serverContext({
+      server_get_values: async () => ({
+        ...SIM_VALUES,
+        units: {
+          '2': {
+            coils: {},
+            discrete_inputs: {},
+            input_registers: {},
+            holding_registers: {
+              6: {
+                value: 7,
+                params: {
+                  address: 6,
+                  registerType: 'holding_registers',
+                  dataType: 'uint16',
+                  comment: 'Level',
+                  min: 0,
+                  max: 10,
+                  interval: 1000,
+                  mode: 'ramp',
+                  start: 5,
+                  step: -1,
+                  restart: false
+                }
+              }
+            }
+          }
+        }
+      })
+    })
+    context.setServerWords('sim', '2', 'holding_registers', 6, [7])
+    const client = await connectInMemory(context)
+
+    const result = await client.callTool({ name: 'server_get_values', arguments: { port: 503 } })
+
+    const [unit] = jsonOf(result).units as { registers: { generator?: unknown }[] }[]
+    expect(unit?.registers[0]?.generator).toEqual({
+      min: 0,
+      max: 10,
+      intervalMs: 1000,
+      mode: 'ramp',
+      start: 5,
+      step: -1,
+      restart: false
     })
   })
 
@@ -874,6 +947,54 @@ describe('server_set_values', () => {
       '"ABCDE" is 5 bytes, and 2 registers hold 4',
       'A utf8 value is a string'
     ])
+  })
+
+  it('refuses a register a ramp drives, as it does one a random generator drives', async () => {
+    const context = serverContext({
+      server_get_values: async () => ({
+        ...SIM_VALUES,
+        units: {
+          '2': {
+            coils: {},
+            discrete_inputs: {},
+            input_registers: {},
+            holding_registers: {
+              6: {
+                value: 7,
+                params: {
+                  address: 6,
+                  registerType: 'holding_registers',
+                  dataType: 'uint16',
+                  comment: 'Level',
+                  min: 0,
+                  max: 10,
+                  interval: 1000,
+                  mode: 'ramp',
+                  start: 5,
+                  step: 1,
+                  restart: true
+                }
+              }
+            }
+          }
+        }
+      })
+    })
+    const client = await connectInMemory(context)
+
+    const result = await client.callTool({
+      name: 'server_set_values',
+      arguments: {
+        port: 503,
+        values: [{ address: 6, registerType: 'holding_registers', value: 3 }]
+      }
+    })
+
+    const answer = jsonOf(result) as { accepted: number; values: { reason?: string }[] }
+    expect(answer.values.map((value) => value.reason)).toEqual([
+      'The register at 6 is driven by a generator; apply a point table to fix its value'
+    ])
+    expect(answer.accepted).toBe(0)
   })
 
   it("reports a value the window did not set as rejected, with the window's reason", async () => {

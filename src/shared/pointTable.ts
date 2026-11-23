@@ -4,6 +4,7 @@ import {
   ByteOrderSchema,
   DataType,
   DataTypeSchema,
+  GeneratorModeSchema,
   isBooleanRegister,
   MAX_REGISTER_ADDRESS,
   RegisterMapping,
@@ -128,6 +129,25 @@ export type Point = z.infer<typeof PointSchema>
  * A `unix` or `datetime` generator reads the clock, so it takes no range.
  */
 export const PointGeneratorSchema = z.object({
+  mode: GeneratorModeSchema.optional().describe(
+    '"random" (the default) draws between min and max. "ramp" starts at start, adds step every interval, and on passing min or max returns to start, or holds if restart is false'
+  ),
+  start: z
+    .number()
+    .optional()
+    .describe('A ramp: the value it starts at and returns to, in engineering units'),
+  step: z
+    .number()
+    .optional()
+    .describe(
+      'A ramp: what each interval adds, in engineering units; negative counts down. Not 0, and a whole raw step after scaling'
+    ),
+  restart: z
+    .boolean()
+    .optional()
+    .describe(
+      'A ramp: return to start on passing min or max (the default), or hold the last value'
+    ),
   min: z.number().optional(),
   max: z.number().optional(),
   intervalSeconds: z.number().int().min(1).max(2147483).optional()
@@ -367,6 +387,11 @@ export interface ResolvedGenerator {
   min: number
   max: number
   intervalMs: number
+  /** Present for a ramp only, with `start`, `step` and `restart` in raw values. */
+  mode?: 'ramp'
+  start?: number
+  step?: number
+  restart?: boolean
 }
 
 /** What an accepted point is, once the table's notation and scaling are taken out. */
@@ -447,6 +472,50 @@ const pointDataType = (
   return { ok: true, dataType: parsed.data }
 }
 
+/** A ramp in raw values: the bounds lowest first, and the step as the raw distance it covers. */
+const rampGenerator = (
+  generator: PointGenerator,
+  dataType: DataType,
+  scaling: PointScaling,
+  intervalMs: number
+): { ok: true; generator: ResolvedGenerator } | { ok: false; reason: string } => {
+  if (dataType === 'unix' || dataType === 'datetime') {
+    return reject(`A ${dataType} generator reads the clock and cannot ramp`)
+  }
+  const { start, step, min, max } = generator
+  if (start === undefined || step === undefined || min === undefined || max === undefined) {
+    return reject('A ramp needs a start, a step, a min and a max')
+  }
+  const rawStart = engineeringToRaw(start, dataType, scaling)
+  if (!rawStart.ok) return reject(`Ramp start: ${rawStart.reason}`)
+  const rawEnd = engineeringToRaw(start + step, dataType, scaling)
+  if (!rawEnd.ok) return reject(`Ramp step: ${rawEnd.reason}`)
+  const rawStep = rawEnd.raw - rawStart.raw
+  if (rawStep === 0) return reject('The ramp step is 0 after scaling')
+  const rawMin = engineeringToRaw(min, dataType, scaling)
+  if (!rawMin.ok) return reject(`Generator min: ${rawMin.reason}`)
+  const rawMax = engineeringToRaw(max, dataType, scaling)
+  if (!rawMax.ok) return reject(`Generator max: ${rawMax.reason}`)
+  // A negative factor turns the range around, so it is stored lowest first.
+  const low = Math.min(rawMin.raw, rawMax.raw)
+  const high = Math.max(rawMin.raw, rawMax.raw)
+  if (rawStart.raw < low || rawStart.raw > high) {
+    return reject('The ramp start has to be between its min and max')
+  }
+  return {
+    ok: true,
+    generator: {
+      min: low,
+      max: high,
+      intervalMs,
+      mode: 'ramp',
+      start: rawStart.raw,
+      step: rawStep,
+      restart: generator.restart ?? true
+    }
+  }
+}
+
 /** The server half of a point: its fixed raw value, or its generator in raw values. */
 const serverValue = (
   point: ServerPoint,
@@ -488,6 +557,14 @@ const serverValue = (
 
   if (generator !== undefined) {
     const intervalMs = (generator.intervalSeconds ?? 1) * 1000
+    if (generator.mode === 'ramp') return rampGenerator(generator, dataType, scaling, intervalMs)
+    if (
+      generator.start !== undefined ||
+      generator.step !== undefined ||
+      generator.restart !== undefined
+    ) {
+      return reject('start, step and restart belong to a ramp; set mode to "ramp"')
+    }
     // A timestamp generator reads the clock, and the store pins its range to 0.
     if (dataType === 'unix' || dataType === 'datetime') {
       if (generator.min !== undefined || generator.max !== undefined) {
@@ -752,7 +829,10 @@ export const serverRegisterParams = (point: ResolvedPoint): RegisterParams | und
     }
   }
   if (point.generator) {
-    const { min, max, intervalMs } = point.generator
+    const { min, max, intervalMs, mode, start, step, restart } = point.generator
+    if (mode === 'ramp') {
+      return { ...base, min, max, interval: intervalMs, mode, start, step, restart }
+    }
     return { ...base, min, max, interval: intervalMs }
   }
   return { ...base, value: typeof point.raw === 'number' ? point.raw : 0 }

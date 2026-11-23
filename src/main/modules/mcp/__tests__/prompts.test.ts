@@ -107,6 +107,13 @@ describe('the prompts', () => {
     expect(text).toContain('generator')
   })
 
+  it('point_table_to_simulator offers a ramp for a quantity that accumulates', async () => {
+    const text = await promptText('point_table_to_simulator')
+
+    expect(text).toContain("mode: 'ramp'")
+    expect(text).toContain('energy')
+  })
+
   it('closed_loop_test points the client at 127.0.0.1 and compares with server_get_values', async () => {
     const text = await promptText('closed_loop_test')
 

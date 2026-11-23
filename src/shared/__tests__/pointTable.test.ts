@@ -14,7 +14,7 @@ import {
   validatePointTable
 } from '../pointTable'
 import { scaleValue } from '../engineeringValue'
-import { DataType } from '../types'
+import { DataType, RegisterParamsSchema } from '../types'
 
 const point = (fields: Partial<Point> & Pick<Point, 'address'>): Point => ({
   name: `P${fields.address}`,
@@ -642,6 +642,138 @@ describe('validatePointTable, server values', () => {
       undefined,
       'A datetime generator reads the clock and takes no min or max'
     ])
+  })
+
+  describe('a ramp generator', () => {
+    const ramp = { mode: 'ramp', start: 0, step: 1, min: 0, max: 100 } as const
+    const resolve = (fields: Partial<ServerPoint>): ReturnType<typeof validatePointTable> =>
+      validatePointTable([serverPoint({ address: 0, ...fields })], { target: 'server' })
+
+    it('stores the ramp in raw values, restart on by default', () => {
+      const report = resolve({ generator: ramp })
+      expect(report.points[0]?.resolved?.generator).toEqual({
+        min: 0,
+        max: 100,
+        intervalMs: 1000,
+        mode: 'ramp',
+        start: 0,
+        step: 1,
+        restart: true
+      })
+    })
+
+    it('keeps restart: false', () => {
+      const report = resolve({ generator: { ...ramp, restart: false, intervalSeconds: 2 } })
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        intervalMs: 2000,
+        restart: false
+      })
+    })
+
+    it('scales start, step, min and max into raw values', () => {
+      const report = resolve({
+        scalingFactor: 0.1,
+        generator: { mode: 'ramp', start: 80, step: -0.5, min: 20, max: 80 }
+      })
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        start: 800,
+        step: -5,
+        min: 200,
+        max: 800
+      })
+    })
+
+    it('turns the direction around under a negative scaling factor', () => {
+      const report = resolve({
+        dataType: 'int16',
+        scalingFactor: -1,
+        generator: { mode: 'ramp', start: 10, step: 1, min: 1, max: 50 }
+      })
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        start: -10,
+        step: -1,
+        min: -50,
+        max: -1
+      })
+    })
+
+    it('resolves a generator with no mode exactly as before', () => {
+      const report = resolve({ generator: { min: 0, max: 10 } })
+      expect(report.points[0]?.resolved?.generator).toStrictEqual({
+        min: 0,
+        max: 10,
+        intervalMs: 1000
+      })
+    })
+
+    it('resolves mode random as a random generator', () => {
+      const report = resolve({ generator: { mode: 'random', min: 0, max: 10 } })
+      expect(report.points[0]?.resolved?.generator).toStrictEqual({
+        min: 0,
+        max: 10,
+        intervalMs: 1000
+      })
+    })
+
+    it('hands the schema a ramp it accepts', () => {
+      const [entry] = resolve({ generator: ramp, comment: 'Energy' }).points
+      const resolved = entry?.resolved
+      if (!resolved) throw new Error('the ramp was rejected')
+      const params = serverRegisterParams(resolved)
+      expect(RegisterParamsSchema.safeParse(params).success).toBe(true)
+      expect(params).toMatchObject({ mode: 'ramp', start: 0, step: 1, restart: true })
+    })
+
+    it.each([
+      [
+        { dataType: 'uint16', generator: { mode: 'ramp', start: 0, min: 0, max: 10 } },
+        'A ramp needs a start, a step, a min and a max'
+      ],
+      [
+        { dataType: 'uint16', generator: { mode: 'ramp', start: 0, step: 1, min: 0 } },
+        'A ramp needs a start, a step, a min and a max'
+      ],
+      [{ dataType: 'unix', generator: ramp }, 'A unix generator reads the clock and cannot ramp'],
+      [
+        { dataType: 'datetime', generator: ramp },
+        'A datetime generator reads the clock and cannot ramp'
+      ],
+      [
+        { dataType: 'uint16', generator: { ...ramp, start: -1 } },
+        'Ramp start: Raw value -1: A uint16 value has to be between 0 and 65535'
+      ],
+      [
+        { dataType: 'uint16', generator: { ...ramp, start: 65535, step: 1, min: 0, max: 65535 } },
+        'Ramp step: Raw value 65536: A uint16 value has to be between 0 and 65535'
+      ],
+      [{ dataType: 'uint16', generator: { ...ramp, step: 0 } }, 'The ramp step is 0 after scaling'],
+      [
+        { dataType: 'uint16', generator: { ...ramp, start: 11, max: 10 } },
+        'The ramp start has to be between its min and max'
+      ],
+      [
+        { dataType: 'uint16', generator: { min: 0, max: 10, start: 1 } },
+        'start, step and restart belong to a ramp; set mode to "ramp"'
+      ],
+      [
+        { dataType: 'uint16', generator: { mode: 'random', min: 0, max: 10, step: 1 } },
+        'start, step and restart belong to a ramp; set mode to "ramp"'
+      ],
+      [
+        { dataType: 'uint16', generator: { min: 0, max: 10, restart: false } },
+        'start, step and restart belong to a ramp; set mode to "ramp"'
+      ]
+    ] as const)('rejects %j', (fields, reason) => {
+      expect(reasons(resolve(fields))).toEqual([reason])
+    })
+
+    it('rejects a step finer than the scaling resolution with the step reason', () => {
+      const report = resolve({
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 0, step: 1, min: 0, max: 1000 }
+      })
+      expect(reasons(report)[0]).toMatch(/^Ramp step: /)
+    })
   })
 
   it.each([

@@ -462,6 +462,44 @@ describe('the server commands', () => {
     expect(undone?.coils[1]?.value).toBe(true)
   })
 
+  it('stores a ramp point whole, and server_set_values leaves the register it drives', async () => {
+    const commands = await wireUp()
+    const { server } = await withServers()
+    const rampUnits = serverUnitsOf(
+      acceptedPoints(
+        validatePointTable(
+          [
+            {
+              name: 'Humidity',
+              address: 0,
+              registerType: 'holding_registers',
+              dataType: 'uint16',
+              generator: { mode: 'ramp', start: 80, step: -1, min: 20, max: 80, restart: false }
+            }
+          ],
+          { target: 'server', unitId: 2 }
+        )
+      )
+    )
+    await commands.send('server_apply_point_table', { uuid: SIM, units: rampUnits })
+
+    expect(server().servers[SIM]?.registers['2']?.holding_registers[0]?.params).toMatchObject({
+      min: 20,
+      max: 80,
+      interval: 1000,
+      mode: 'ramp',
+      start: 80,
+      step: -1,
+      restart: false
+    })
+
+    const { results } = await commands.send('server_set_values', {
+      uuid: SIM,
+      values: [{ unitId: '2', registerType: 'holding_registers', address: 0, value: 50 }]
+    })
+    expect(results).toEqual(['generator'])
+  })
+
   it('refuses each server command while the server view is split out', async () => {
     const commands = await wireUp()
     await withServers()
