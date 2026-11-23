@@ -867,6 +867,42 @@ describe('validatePointTable, server values', () => {
       })
       expect(reasons(report)[0]).toMatch(/^Ramp step: /)
     })
+
+    // `isWhole` measured `unscale(start + step)`, whose tolerance grows with
+    // the start: at 1e9 it took 1000000001.25 for whole and stored a step of 1.
+    it('names the resolution of a uint32 step of 1.25 beside a start of 1e9', () => {
+      const report = resolve({
+        dataType: 'uint32',
+        generator: { mode: 'ramp', start: 1e9, step: 1.25, min: 1e9, max: 1e9 + 10 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1.25 is smaller than, or not a multiple of, the resolution of 1 this scaling gives a uint32'
+      ])
+    })
+
+    // `unscale(1e16 + 1)` is `unscale(1e16)`, because doubles there are 2
+    // apart, so the step was taken for 0 raw.
+    it('accepts a uint16 step of 1 under an interpolation whose engineering values sit at 1e16', () => {
+      const report = resolve({
+        dataType: 'uint16',
+        interpolate: { x1: 0, x2: 10, y1: 1e16, y2: 1e16 + 10 },
+        generator: { mode: 'ramp', start: 1e16, step: 1, min: 1e16, max: 1e16 + 10 }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({ start: 0, step: 1, max: 10 })
+    })
+
+    // 1e-10 is whole to `isWhole`, so the step rounds to 0 raw rather than
+    // failing as a fraction.
+    it('names the resolution of a uint16 step of 1e-10, which rounds to 0 raw', () => {
+      const report = resolve({
+        dataType: 'uint16',
+        generator: { mode: 'ramp', start: 0, step: 1e-10, min: 0, max: 10 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1e-10 is smaller than, or not a multiple of, the resolution of 1 this scaling gives a uint16'
+      ])
+    })
   })
 
   it.each([

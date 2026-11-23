@@ -522,7 +522,7 @@ const rampGenerator = (
   // refuses it if it has more.
   const toRaw = (raw: number): number => (whole || !scales(scaling) ? raw : toRampDecimals(raw))
   const rawStep = whole
-    ? wholeRampStep(start, step, rawStart.raw, dataType, scaling)
+    ? wholeRampStep(step, dataType, scaling)
     : { ok: true as const, raw: toRaw(unscaleDistance(step, scaling)) }
   if (!rawStep.ok) return rawStep
   if (rawStep.raw === 0) return reject('The ramp step is 0 after scaling')
@@ -555,20 +555,19 @@ const rampGenerator = (
 /**
  * The raw step of an integer ramp, or why the step is not a whole raw step.
  *
- * `start + step` is unscaled without asking the data type whether it holds
- * it, because the ramp never writes it: a step past a bound restarts or
- * holds. `rawStart` has already refused a scaling `unscale` cannot undo.
+ * The step is unscaled as a distance rather than as `start + step`, because
+ * `isWhole` grows with the number it measures: beside a start of 1e9 it took
+ * 1000000001.25 for whole. The start has already refused a scaling
+ * `unscaleDistance` cannot undo.
  */
 const wholeRampStep = (
-  start: number,
   step: number,
-  rawStart: number,
   dataType: DataType,
   scaling: PointScaling
 ): { ok: true; raw: number } | { ok: false; reason: string } => {
-  const end = unscale(start + step, scaling)
-  const raw = Math.round(end) - rawStart
-  if (step !== 0 && (!isWhole(end) || raw === 0)) {
+  const distance = unscaleDistance(step, scaling)
+  const raw = Math.round(distance)
+  if (step !== 0 && (!isWhole(distance) || raw === 0)) {
     return reject(
       `Ramp step: ${step} is smaller than, or not a multiple of, the resolution of ${resolutionOf(scaling)} this scaling gives a ${dataType}`
     )
