@@ -732,6 +732,10 @@ const repairFromTheKey = (): void => {
     alsoReset: repairedServers?.fields
   })
   if (repair) useServerZustand.setState({ ...repair.state, configReset: repair.reset })
+  // Dropped without a notice, as `dropUnservableRegisters` drops a register
+  // from a store of an older version.
+  else if (repairedServers?.droppedRamp)
+    useServerZustand.setState({ servers: repairedServers.servers })
 }
 
 repairFromTheKey()
