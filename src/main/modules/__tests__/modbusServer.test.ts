@@ -1206,6 +1206,32 @@ describe('ModbusServer', () => {
       )
     })
 
+    it('serves a ramp from its start again after a sync with its params', () => {
+      const params: RegisterParams = {
+        address: 0,
+        registerType: 'holding_registers',
+        dataType: 'uint16',
+        comment: '',
+        value: undefined,
+        min: 0,
+        max: 7,
+        interval: 1000,
+        mode: 'ramp',
+        start: 5,
+        step: 1,
+        restart: true
+      }
+      server.addRegister({ uuid, unitId, params })
+      vi.advanceTimersByTime(2000)
+      expect(server.readRegisters(uuid, unitId, 'holding_registers', 0, 1)).toEqual([7])
+
+      server.syncServerRegisters({ uuid, unitId, registerValues: [params] })
+
+      expect(server.readRegisters(uuid, unitId, 'holding_registers', 0, 1)).toEqual([5])
+      vi.advanceTimersByTime(1000)
+      expect(server.readRegisters(uuid, unitId, 'holding_registers', 0, 1)).toEqual([6])
+    })
+
     it('disposes existing generators before syncing', () => {
       // Add generators for both register types
       server.addRegister({

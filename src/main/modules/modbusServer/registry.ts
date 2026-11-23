@@ -260,7 +260,11 @@ export class ServerRegistry {
       value,
       comment,
       stringValue,
-      length
+      length,
+      mode,
+      start,
+      step,
+      restart
     } = params
 
     // Ensure generator map for this server and unitId
@@ -341,7 +345,11 @@ export class ServerRegistry {
         registerType,
         comment,
         stringValue,
-        length
+        length,
+        mode,
+        start,
+        step,
+        restart
       })
     )
 

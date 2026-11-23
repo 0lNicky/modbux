@@ -383,6 +383,128 @@ describe('ValueGenerator', () => {
       gen.dispose()
     })
   })
+  describe('ramp', () => {
+    type Params = ConstructorParameters<typeof ValueGenerator>[0]
+
+    /** A `uint16` holding ramp at interval 1000, from 5 by 1 within 0 to 7. */
+    const ramp = (serverData: ServerData, overrides: Partial<Params> = {}): ValueGenerator =>
+      new ValueGenerator({
+        uuid: 'test-uuid',
+        unitId: '1' as UnitIdString,
+        windows: createMockWindows(),
+        serverData,
+        registerType: 'holding_registers',
+        address: 0,
+        dataType: 'uint16',
+        min: 0,
+        max: 7,
+        order: ABCD,
+        interval: 1000,
+        comment: '',
+        mode: 'ramp',
+        start: 5,
+        step: 1,
+        restart: true,
+        ...overrides
+      })
+
+    it('writes start, then steps and returns to start past max', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData)
+
+      const seen = [wordAt(serverData, 0)]
+      for (let i = 0; i < 3; i++) {
+        vi.advanceTimersByTime(1000)
+        seen.push(wordAt(serverData, 0))
+      }
+      expect(seen).toEqual([5, 6, 7, 5])
+
+      gen.dispose()
+    })
+
+    it('holds the last value and stops its timer when restart is off', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData, { restart: false })
+
+      const seen = [wordAt(serverData, 0)]
+      for (let i = 0; i < 5; i++) {
+        vi.advanceTimersByTime(1000)
+        seen.push(wordAt(serverData, 0))
+      }
+      expect(seen).toEqual([5, 6, 7, 7, 7, 7])
+      expect(vi.getTimerCount()).toBe(0)
+
+      gen.dispose()
+    })
+
+    it('writes a start on the bound once and stops after one tick', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData, { start: 7, restart: false })
+
+      expect(wordAt(serverData, 0)).toBe(7)
+      vi.advanceTimersByTime(1000)
+      expect(wordAt(serverData, 0)).toBe(7)
+      expect(vi.getTimerCount()).toBe(0)
+
+      gen.dispose()
+    })
+
+    it('deletes its word on dispose', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData)
+
+      expect(() => gen.dispose()).not.toThrow()
+      expect(serverData.holding_registers.has(0)).toBe(false)
+    })
+
+    it('reports the params it was built from', () => {
+      const gen = ramp(createServerData(), { restart: false })
+
+      expect(gen.params).toEqual({
+        address: 0,
+        registerType: 'holding_registers',
+        dataType: 'uint16',
+        min: 0,
+        max: 7,
+        interval: 1000,
+        comment: '',
+        mode: 'ramp',
+        start: 5,
+        step: 1,
+        restart: false
+      })
+
+      gen.dispose()
+    })
+
+    it('runs a ramp without a step as a random generator', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)
+      const serverData = createServerData()
+      const gen = ramp(serverData, { step: undefined })
+
+      expect(wordAt(serverData, 0)).toBe(4)
+      expect(gen.params).not.toHaveProperty('mode')
+
+      gen.dispose()
+      vi.spyOn(Math, 'random').mockRestore()
+    })
+
+    it('reports no ramp key for a random generator', () => {
+      const gen = ramp(createServerData(), {
+        mode: undefined,
+        start: undefined,
+        step: undefined,
+        restart: undefined
+      })
+
+      for (const key of ['mode', 'start', 'step', 'restart']) {
+        expect(gen.params).not.toHaveProperty(key)
+      }
+
+      gen.dispose()
+    })
+  })
+
   // `_updateValue` is called by the constructor and by `setInterval`, and
   // neither awaits it. An `async` one turns a throw into a rejection with no
   // handler, so the caller is told nothing and the generator keeps ticking.

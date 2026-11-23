@@ -14,6 +14,7 @@ import {
 import { Windows } from '../../windows'
 import { encodeRegisters, writeRegisters } from './registers'
 import { round } from 'lodash'
+import { nextRampTick, RampSpec } from './ramp'
 
 type ValueGeneratorParams = {
   uuid: string
@@ -47,6 +48,10 @@ export class ValueGenerator implements RegisterValueGenerator {
   private _stringValue: string
   private _length: number
   private _intervalTimer: NodeJS.Timeout
+  /** `undefined` for a random generator. */
+  private _ramp: RampSpec | undefined
+  /** Steps the ramp has taken since it last left `start`. */
+  private _stepCount = 0
 
   /**
    * Constructs a ValueGenerator.
@@ -66,7 +71,11 @@ export class ValueGenerator implements RegisterValueGenerator {
     interval,
     comment,
     stringValue,
-    length
+    length,
+    mode,
+    start,
+    step,
+    restart
   }: ValueGeneratorParams) {
     this._uuid = uuid
     this._unitId = unitId
@@ -82,9 +91,23 @@ export class ValueGenerator implements RegisterValueGenerator {
     this._comment = comment
     this._stringValue = stringValue ?? ''
     this._length = length ?? DEFAULT_UTF8_LENGTH
+    // `RegisterParamsSchema` refuses a ramp without `start` or `step`; one
+    // constructed directly without them runs as a random generator.
+    this._ramp =
+      mode === 'ramp' && start !== undefined && step !== undefined
+        ? {
+            start,
+            step,
+            min,
+            max,
+            restart: restart ?? true,
+            fractional: dataType === 'float' || dataType === 'double'
+          }
+        : undefined
 
     // Set initial value and start periodic updates
-    this._updateValue()
+    if (this._ramp) this._updateServerData(this._ramp.start)
+    else this._updateValue()
     this._intervalTimer = setInterval(this._updateValue, interval)
   }
 
@@ -132,6 +155,10 @@ export class ValueGenerator implements RegisterValueGenerator {
    * holds.
    */
   private _updateValue = (): void => {
+    if (this._ramp) {
+      this._updateRamp(this._ramp)
+      return
+    }
     switch (this._dataType) {
       case 'unix': {
         // Generator: current system time (seconds since epoch)
@@ -158,6 +185,20 @@ export class ValueGenerator implements RegisterValueGenerator {
   }
 
   /**
+   * Writes the ramp's next tick. A `hold` clears the timer, so a ramp with
+   * restart off writes nothing after it reaches its bound.
+   */
+  private _updateRamp = (ramp: RampSpec): void => {
+    const tick = nextRampTick(ramp, this._stepCount)
+    if (tick.kind === 'hold') {
+      clearInterval(this._intervalTimer)
+      return
+    }
+    this._stepCount = tick.stepCount
+    this._updateServerData(tick.value)
+  }
+
+  /**
    * Returns the parameters needed to reconstruct this generator.
    */
   get params(): RegisterParams {
@@ -169,6 +210,14 @@ export class ValueGenerator implements RegisterValueGenerator {
       max: this._max,
       interval: this._interval,
       comment: this._comment,
+      ...(this._ramp
+        ? {
+            mode: 'ramp' as const,
+            start: this._ramp.start,
+            step: this._ramp.step,
+            restart: this._ramp.restart
+          }
+        : {}),
       ...(this._dataType === 'utf8' ? { stringValue: this._stringValue, length: this._length } : {})
     }
   }
