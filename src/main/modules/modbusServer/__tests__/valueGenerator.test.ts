@@ -437,14 +437,30 @@ describe('ValueGenerator', () => {
       gen.dispose()
     })
 
+    // The word reads 7 whether the hold tick writes nothing or writes 7 again,
+    // so the writes are read off what the server view is sent.
     it('writes a start on the bound once and stops after one tick', () => {
       const serverData = createServerData()
-      const gen = ramp(serverData, { start: 7, restart: false })
+      const windows = createMockWindows()
+      const gen = ramp(serverData, { start: 7, restart: false, windows })
 
       expect(wordAt(serverData, 0)).toBe(7)
       vi.advanceTimersByTime(1000)
       expect(wordAt(serverData, 0)).toBe(7)
       expect(vi.getTimerCount()).toBe(0)
+      expect(vi.mocked(windows.send).mock.calls).toEqual([
+        [
+          'register_value',
+          {
+            uuid: 'test-uuid',
+            unitId: '1',
+            registerType: 'holding_registers',
+            address: 0,
+            value: 7
+          },
+          'serverView'
+        ]
+      ])
 
       gen.dispose()
     })
