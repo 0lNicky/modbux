@@ -7,7 +7,12 @@ import { meme } from '@renderer/components/shared/inputs/meme'
 import { useCallback, useState } from 'react'
 import Delete from '@mui/icons-material/Delete'
 import { BaseDataType, registerWidth } from '@shared'
-import { FIELD_DEFAULTS, isFormDirty, isTimestampType } from './addRegister.zustand.helpers'
+import {
+  FIELD_DEFAULTS,
+  isFormDirty,
+  isRampFormValid,
+  isTimestampType
+} from './addRegister.zustand.helpers'
 
 type SubmitResult = { address: number; dataType: BaseDataType } | undefined
 
@@ -43,7 +48,9 @@ export const AddButtons = meme(() => {
       return z.fixed ? z.valid.address && z.valid.value : z.valid.address && z.valid.interval
     }
     if (z.fixed) return z.valid.address && z.valid.value
-    return z.valid.address && z.valid.min && z.valid.max && z.valid.interval
+    const range = z.valid.address && z.valid.min && z.valid.max && z.valid.interval
+    if (z.generatorMode === 'random') return range
+    return range && z.valid.start && z.valid.step && isRampFormValid(z)
   })
 
   // A submit waits for main to take the register, and the buttons stay under

@@ -1,8 +1,11 @@
 /**
  * What value the register produces: a fixed one, or a generator.
  *
- * The fields swap with the data type, so the nine of them are one subject.
+ * The fields swap with the data type and the generator mode, so all of them
+ * are one subject.
  */
+import Checkbox from '@mui/material/Checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import { InputBaseComponentProps } from '@mui/material/InputBase'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
@@ -10,46 +13,80 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import { useAddRegisterZustand } from './addRegister.zustand'
 import { meme } from '@renderer/components/shared/inputs/meme'
 import { maskInputProps } from '@renderer/components/shared/inputs/types'
-import { inTimestampWindow, timestampWindow, utf8MaxBytes } from './addRegister.zustand.helpers'
+import {
+  inTimestampWindow,
+  isTimestampType,
+  rampFieldErrors,
+  timestampWindow,
+  utf8MaxBytes
+} from './addRegister.zustand.helpers'
 import { ChangeEvent, ElementType, useCallback, useEffect, useMemo } from 'react'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterLuxon } from '@mui/x-date-pickers/AdapterLuxon'
 import { DateTime } from 'luxon'
-import { ValueInput, MinInput, MaxInput, IntervalInput, RegisterLengthInput } from './maskedInputs'
+import {
+  ValueInput,
+  MinInput,
+  MaxInput,
+  IntervalInput,
+  RegisterLengthInput,
+  StartInput,
+  StepInput
+} from './maskedInputs'
+import { GeneratorMode } from '@shared'
+
+/** What the toggle offers: a fixed value, or one of the generator modes. */
+type ValueSource = 'fixed' | GeneratorMode
 
 export const FixedOrGenerator = meme(() => {
   const fixed = useAddRegisterZustand((z) => z.fixed)
+  const generatorMode = useAddRegisterZustand((z) => z.generatorMode)
   const dataType = useAddRegisterZustand((z) => z.dataType)
 
-  const handleChange = useCallback((_event: unknown, value: boolean | null): void => {
+  // Fixed leaves the generator mode as it was, so Generator or Ramp picked
+  // again comes back the way it was left.
+  const handleChange = useCallback((_event: unknown, value: ValueSource | null): void => {
     if (value === null) return
     const addRegisterZustand = useAddRegisterZustand.getState()
-    addRegisterZustand.setFixed(value)
+    if (value === 'fixed') {
+      addRegisterZustand.setFixed(true)
+      return
+    }
+    addRegisterZustand.setFixed(false)
+    addRegisterZustand.setGeneratorMode(value)
   }, [])
 
   // UTF-8 and BITMAP are always fixed — hide toggle
   if (dataType === 'utf8' || dataType === 'bitmap') return null
+
+  const value: ValueSource = fixed ? 'fixed' : generatorMode
 
   return (
     <ToggleButtonGroup
       size="small"
       exclusive
       color="primary"
-      value={fixed}
+      value={value}
       onChange={handleChange}
       sx={{ flex: 1 }}
     >
-      <ToggleButton data-testid="add-reg-fixed-btn" sx={{ flex: 1, flexBasis: 0 }} value={true}>
+      <ToggleButton data-testid="add-reg-fixed-btn" sx={{ flex: 1, flexBasis: 0 }} value="fixed">
         Fixed
       </ToggleButton>
       <ToggleButton
         data-testid="add-reg-generator-btn"
         sx={{ flex: 1, flexBasis: 0 }}
-        value={false}
+        value="random"
       >
         Generator
       </ToggleButton>
+      {/* A timestamp generator reads the clock, so there is nothing to ramp. */}
+      {!isTimestampType(dataType) && (
+        <ToggleButton data-testid="add-reg-ramp-btn" sx={{ flex: 1, flexBasis: 0 }} value="ramp">
+          Ramp
+        </ToggleButton>
+      )}
     </ToggleButtonGroup>
   )
 })
@@ -93,7 +130,11 @@ const ValueInputComponent = meme(() => {
 
 const MinTextField = meme(() => {
   const min = useAddRegisterZustand((z) => String(z.min))
-  const valid = useAddRegisterZustand((z) => z.valid.min)
+  // A ramp reads min and max as bounds, so one above the other is refused
+  // there and nowhere else.
+  const valid = useAddRegisterZustand(
+    (z) => z.valid.min && !(z.generatorMode === 'ramp' && rampFieldErrors(z).range)
+  )
 
   const setMin = useAddRegisterZustand.getState().setMin
 
@@ -137,6 +178,85 @@ const MaxTextField = meme(() => {
           inputProps: maskInputProps({ set: setMax })
         }
       }}
+    />
+  )
+})
+
+//
+//
+//
+//
+// Ramp
+
+const StartTextField = meme(() => {
+  const start = useAddRegisterZustand((z) => z.start)
+  const valid = useAddRegisterZustand((z) => z.valid.start && !rampFieldErrors(z).start)
+
+  const setStart = useAddRegisterZustand.getState().setStart
+
+  return (
+    <TextField
+      data-testid="add-reg-start-input"
+      error={!valid}
+      label="Start"
+      variant="outlined"
+      size="small"
+      sx={{ width: 90 }}
+      value={start}
+      slotProps={{
+        input: {
+          inputComponent: StartInput as unknown as ElementType<InputBaseComponentProps, 'input'>,
+          inputProps: maskInputProps({ set: setStart })
+        }
+      }}
+    />
+  )
+})
+
+const StepTextField = meme(() => {
+  const step = useAddRegisterZustand((z) => z.step)
+  const valid = useAddRegisterZustand((z) => z.valid.step && !rampFieldErrors(z).step)
+
+  const setStep = useAddRegisterZustand.getState().setStep
+
+  return (
+    <TextField
+      data-testid="add-reg-step-input"
+      error={!valid}
+      label="Step"
+      variant="outlined"
+      size="small"
+      sx={{ width: 90 }}
+      value={step}
+      slotProps={{
+        input: {
+          inputComponent: StepInput as unknown as ElementType<InputBaseComponentProps, 'input'>,
+          inputProps: maskInputProps({ set: setStep })
+        }
+      }}
+    />
+  )
+})
+
+const RestartCheckbox = meme(() => {
+  const restart = useAddRegisterZustand((z) => z.restart)
+
+  const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>): void => {
+    const addRegisterZustand = useAddRegisterZustand.getState()
+    addRegisterZustand.setRestart(event.target.checked)
+  }, [])
+
+  return (
+    <FormControlLabel
+      control={
+        <Checkbox
+          size="small"
+          checked={restart}
+          onChange={handleChange}
+          data-testid="add-reg-restart-checkbox"
+        />
+      }
+      label="Restart"
     />
   )
 })
@@ -325,6 +445,7 @@ const RegisterLengthField = meme(() => {
 
 export const ValueParameters = meme(() => {
   const fixed = useAddRegisterZustand((z) => z.fixed)
+  const generatorMode = useAddRegisterZustand((z) => z.generatorMode)
   const dataType = useAddRegisterZustand((z) => z.dataType)
 
   // UTF-8: string input + register length
@@ -350,6 +471,19 @@ export const ValueParameters = meme(() => {
   // Numeric fixed: value input
   if (fixed) {
     return <ValueInputComponent />
+  }
+
+  if (generatorMode === 'ramp') {
+    return (
+      <>
+        <StartTextField />
+        <StepTextField />
+        <MinTextField />
+        <MaxTextField />
+        <IntervalTextField />
+        <RestartCheckbox />
+      </>
+    )
   }
 
   // Numeric generator: min/max/interval

@@ -1,8 +1,8 @@
 /**
- * The six masked inputs, each an IMask wrapper behind a forwardRef.
+ * The eight masked inputs, each an IMask wrapper behind a forwardRef.
  *
- * Six near-identical pairs, which is why they sit together: whatever is done
- * to one of them should be done to all six, and that is easier to see here
+ * Eight near-identical pairs, which is why they sit together: whatever is done
+ * to one of them should be done to all eight, and that is easier to see here
  * than spread through the dialog.
  */
 import { useAddRegisterZustand } from './addRegister.zustand'
@@ -109,6 +109,59 @@ const MaxInputForward = forwardRef<HTMLInputElement, MaskInputProps>((props, ref
 MaxInputForward.displayName = 'MaxInput'
 
 export const MaxInput = meme(MaxInputForward)
+
+//
+//
+// Ramp
+
+const StartInputForward = forwardRef<HTMLInputElement, MaskInputProps>((props, ref) => {
+  const { set, ...other } = props
+  const dataType = useAddRegisterZustand((z) => z.dataType)
+  const { min, max, integer } = useMinMaxInteger(dataType)
+
+  return (
+    <IMaskInput
+      {...other}
+      {...decimalMask(integer)}
+      min={min}
+      max={max}
+      autofix
+      inputRef={ref}
+      onAccept={(value) => set(value, notEmpty(value))}
+    />
+  )
+})
+
+StartInputForward.displayName = 'StartInput'
+
+export const StartInput = meme(StartInputForward)
+
+/**
+ * A step runs either way across the whole span of the type, so an unsigned
+ * type takes a negative one too.
+ */
+const StepInputForward = forwardRef<HTMLInputElement, MaskInputProps>((props, ref) => {
+  const { set, ...other } = props
+  const dataType = useAddRegisterZustand((z) => z.dataType)
+  const { min, max, integer } = useMinMaxInteger(dataType)
+  const span = max - min
+
+  return (
+    <IMaskInput
+      {...other}
+      {...decimalMask(integer)}
+      min={-span}
+      max={span}
+      autofix
+      inputRef={ref}
+      onAccept={(value) => set(value, notEmpty(value))}
+    />
+  )
+})
+
+StepInputForward.displayName = 'StepInput'
+
+export const StepInput = meme(StepInputForward)
 
 //
 //

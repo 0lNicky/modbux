@@ -147,7 +147,9 @@ const allFieldsValid = {
   max: true,
   interval: true,
   registerLength: true,
-  stringValue: true
+  stringValue: true,
+  start: true,
+  step: true
 }
 
 describe('what the edit dialog opens with', () => {
@@ -370,5 +372,88 @@ describe('the edit dialog buttons', () => {
       dataType: 'uint32',
       length: undefined
     })
+  })
+})
+
+/** A stored ramp that holds at its bound, which is not what the dialog defaults to. */
+const rampAt100: ServerRegister[number] = {
+  value: 0,
+  params: {
+    address: 100,
+    registerType: 'holding_registers',
+    dataType: 'uint16',
+    comment: 'humidity',
+    min: 0,
+    max: 10,
+    interval: 2000,
+    mode: 'ramp',
+    start: 5,
+    step: 2,
+    restart: false
+  }
+}
+
+/** The testid sits on the MUI checkbox root, and the box a user ticks is inside it. */
+const restartCheckbox = (): HTMLElement =>
+  within(screen.getByTestId('add-reg-restart-checkbox')).getByRole('checkbox')
+
+/** The add dialog for a holding register, after its own reset has run. */
+const renderAdding = (): void => {
+  useAddRegisterZustand.getState().setRegisterType('holding_registers')
+  render(<AddRegister />)
+}
+
+describe('ramp mode', () => {
+  beforeEach(() => {
+    useAddRegisterZustand.getState().resetToDefaults()
+  })
+
+  it('shows the ramp fields and a ticked Restart once Ramp is picked', async () => {
+    const user = userEvent.setup()
+    renderAdding()
+
+    await user.click(screen.getByTestId('add-reg-ramp-btn'))
+
+    for (const testId of [
+      'add-reg-start-input',
+      'add-reg-step-input',
+      'add-reg-min-input',
+      'add-reg-max-input',
+      'add-reg-interval-input'
+    ]) {
+      expect(screen.getByTestId(testId)).toBeVisible()
+    }
+    expect(restartCheckbox()).toBeChecked()
+  })
+
+  it('offers no Ramp for a unix register', async () => {
+    renderAdding()
+    await act(async () => useAddRegisterZustand.getState().setDataType('unix'))
+
+    expect(screen.queryByTestId('add-reg-ramp-btn')).not.toBeInTheDocument()
+  })
+
+  it('refuses a step of 0 and says so on the step field', async () => {
+    const user = userEvent.setup()
+    renderAdding()
+    await user.click(screen.getByTestId('add-reg-ramp-btn'))
+
+    const step = fieldInput('add-reg-step-input')
+    await user.clear(step)
+    await user.type(step, '0')
+
+    expect(submitButton()).toBeDisabled()
+    expect(step).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('opens a stored ramp in Ramp mode with its own fields, and clean', () => {
+    renderEditing(rampAt100)
+
+    expect(screen.getByTestId('add-reg-ramp-btn')).toHaveAttribute('aria-pressed', 'true')
+    expect(fieldInput('add-reg-start-input')).toHaveValue('5')
+    expect(fieldInput('add-reg-step-input')).toHaveValue('2')
+    expect(restartCheckbox()).not.toBeChecked()
+    expect(submitButton()).toBeDisabled()
+    expect(removeButton()).toBeEnabled()
   })
 })

@@ -45,7 +45,11 @@ const AddRegister = meme(() => {
       min,
       value,
       stringValue,
-      length
+      length,
+      mode,
+      start,
+      step,
+      restart
     } = addRegisterZustand.serverRegisterEdit.params
 
     // The masked setters take the validity of what they are given as a second
@@ -70,6 +74,12 @@ const AddRegister = meme(() => {
     )
     addRegisterZustand.setMax(max === undefined ? FIELD_DEFAULTS.max : String(max), true)
     addRegisterZustand.setMin(min === undefined ? FIELD_DEFAULTS.min : String(min), true)
+    // After `setDataType`, which moves a timestamp off ramp. A register with no
+    // ramp of its own gets the defaults, so switching to Ramp lands on them.
+    addRegisterZustand.setGeneratorMode(mode ?? 'random')
+    addRegisterZustand.setStart(start === undefined ? FIELD_DEFAULTS.start : String(start), true)
+    addRegisterZustand.setStep(step === undefined ? FIELD_DEFAULTS.step : String(step), true)
+    addRegisterZustand.setRestart(restart ?? true)
 
     if (dataType === 'utf8') {
       addRegisterZustand.setStringValue(stringValue ?? '')
