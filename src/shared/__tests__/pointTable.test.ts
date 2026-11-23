@@ -926,6 +926,28 @@ describe('validatePointTable, server values', () => {
         max: 133.3333333
       })
     })
+
+    // Raw 1e-8 rounds to 0 at 7 decimals, and the reason read as if the step
+    // given were 0.
+    it('names the resolution of a float step that rounds to 0 raw under a scaling', () => {
+      const report = resolve({
+        dataType: 'float',
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 0, step: 1e-7, min: 0, max: 1 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1e-7 is smaller than the resolution of 0.000001 this scaling gives a float'
+      ])
+    })
+
+    it('answers a scaled float step of 0 with the step being 0', () => {
+      const report = resolve({
+        dataType: 'float',
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 0, step: 0, min: 0, max: 1 }
+      })
+      expect(reasons(report)).toEqual(['The ramp step is 0 after scaling'])
+    })
   })
 
   it.each([

@@ -26,6 +26,7 @@ import {
   getValueRangeError,
   holdsExact64Bits,
   MAX_UTF8_LENGTH,
+  RAMP_DECIMALS,
   registerWidth,
   ServerRegisterValue,
   toRampDecimals
@@ -525,6 +526,13 @@ const rampGenerator = (
     ? wholeRampStep(step, dataType, scaling)
     : { ok: true as const, raw: toRaw(unscaleDistance(step, scaling)) }
   if (!rawStep.ok) return rawStep
+  // `wholeRampStep` answers this for an integer type; here `toRaw` has
+  // rounded a float or double step finer than 7 raw decimals to 0.
+  if (step !== 0 && rawStep.raw === 0) {
+    return reject(
+      `Ramp step: ${step} is smaller than the resolution of ${resolutionOf(scaling) / 10 ** RAMP_DECIMALS} this scaling gives a ${dataType}`
+    )
+  }
   if (rawStep.raw === 0) return reject('The ramp step is 0 after scaling')
   const rawMin = engineeringToRaw(min, dataType, scaling)
   if (!rawMin.ok) return reject(`Generator min: ${rawMin.reason}`)
