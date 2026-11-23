@@ -342,6 +342,9 @@ export const getValueRangeError = (dataType: DataType, value: number): string | 
   return undefined
 }
 
+/** The largest finite float32, which `writeFloatBE` turns anything above into Infinity. */
+export const FLOAT32_MAX = 3.4028234663852886e38
+
 export const getUsedAddresses = (registers: RegisterParams[]): number[] => {
   const addressSet = new Set<number>()
   registers.forEach((p) => {

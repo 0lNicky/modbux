@@ -589,6 +589,28 @@ describe('Server RegisterParamsSchema — ramp generator', () => {
     expect(issuePaths({ ...random, [field]: fieldValue })).toContainEqual([field])
   })
 
+  // `writeFloatBE(4e38)` writes Infinity, so a bound past float32 reaches the
+  // register as a value no bound allows.
+  it('rejects a float ramp bound beyond what a float holds', () => {
+    const float = { ...ramp, dataType: 'float' }
+    expect(issuePaths({ ...float, max: 4e38 })).toContainEqual(['max'])
+    expect(issuePaths({ ...float, min: -4e38, start: 0 })).toContainEqual(['min'])
+    expect(RegisterParamsSchema.safeParse({ ...float, max: 3.4e38 }).success).toBe(true)
+  })
+
+  it.each(['min', 'max', 'start', 'step'] as const)(
+    'rejects a ramp %s that is not finite',
+    (field) => {
+      const infinite = field === 'min' ? -Infinity : Infinity
+      expect(issuePaths({ ...ramp, dataType: 'double', [field]: infinite })).toContainEqual([field])
+    }
+  )
+
+  it('accepts a stored random float generator with bounds past float32, as before', () => {
+    const float = { ...random, dataType: 'float', min: -4e38, max: 4e38 }
+    expect(RegisterParamsSchema.safeParse(float).success).toBe(true)
+  })
+
   it('rejects a fixed register carrying mode', () => {
     const fixed = {
       address: 0,

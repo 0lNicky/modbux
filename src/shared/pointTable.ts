@@ -21,6 +21,7 @@ import {
 } from './types'
 import {
   createRegisters,
+  FLOAT32_MAX,
   getMinMaxValues,
   getValueRangeError,
   holdsExact64Bits,
@@ -263,9 +264,6 @@ export interface PointScaling {
 }
 
 export type RawConversion = { ok: true; raw: number } | { ok: false; reason: string }
-
-/** The largest finite float32, which `writeFloatBE` turns anything above into Infinity. */
-const FLOAT32_MAX = 3.4028234663852886e38
 
 /** The types whose raw value is a whole number. */
 const WHOLE_NUMBER_TYPES: readonly DataType[] = [
