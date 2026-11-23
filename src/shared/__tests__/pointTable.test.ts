@@ -903,6 +903,29 @@ describe('validatePointTable, server values', () => {
         'Ramp step: 1e-10 is smaller than, or not a multiple of, the resolution of 1 this scaling gives a uint16'
       ])
     })
+
+    // Raw start 0.10000001 and raw max 0.1 both round to 0.1 at 7 decimals.
+    it('rejects a scaled double start past max before rounding takes it back inside', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 1.0000001, step: -1, min: 0, max: 1 }
+      })
+      expect(reasons(report)).toEqual(['The ramp start has to be between its min and max'])
+    })
+
+    it('accepts a scaled double start on max, rounded with it', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 0.3,
+        generator: { mode: 'ramp', start: 40, step: -0.3, min: 10, max: 40 }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        start: 133.3333333,
+        max: 133.3333333
+      })
+    })
   })
 
   it.each([

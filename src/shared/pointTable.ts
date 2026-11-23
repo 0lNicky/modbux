@@ -531,21 +531,21 @@ const rampGenerator = (
   const rawMax = engineeringToRaw(max, dataType, scaling)
   if (!rawMax.ok) return reject(`Generator max: ${rawMax.reason}`)
   // A negative factor turns the range around, so it is stored lowest first.
-  // `toRaw` never puts two values out of order, so start stays inside them.
-  const low = toRaw(Math.min(rawMin.raw, rawMax.raw))
-  const high = toRaw(Math.max(rawMin.raw, rawMax.raw))
-  const first = toRaw(rawStart.raw)
-  if (first < low || first > high) {
+  // The start is compared before `toRaw`, which can round a start past max
+  // onto it, and `toRaw` never puts two values out of order.
+  const low = Math.min(rawMin.raw, rawMax.raw)
+  const high = Math.max(rawMin.raw, rawMax.raw)
+  if (rawStart.raw < low || rawStart.raw > high) {
     return reject('The ramp start has to be between its min and max')
   }
   return {
     ok: true,
     generator: {
-      min: low,
-      max: high,
+      min: toRaw(low),
+      max: toRaw(high),
       intervalMs,
       mode: 'ramp',
-      start: first,
+      start: toRaw(rawStart.raw),
       step: rawStep.raw,
       restart: generator.restart ?? true
     }
