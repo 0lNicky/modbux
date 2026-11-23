@@ -12,16 +12,24 @@ export interface RampSpec {
 export type RampTick = { kind: 'value'; value: number; stepCount: number } | { kind: 'hold' }
 
 /**
- * How far a float value may miss `bound` and still be written as it, the
- * shape of `isWhole` in `src/shared/pointTable.ts`. `0.1 * 3` is
- * `0.30000000000000004`, so without it a max of 0.3 is never written.
+ * How far a float value may miss `bound` and still be written as it.
+ * `0.1 * 3` is `0.30000000000000004`, so without it a max of 0.3 is never
+ * written.
  *
- * Under half a step, because `start` is inside the bounds: a value that close
- * to a bound is then the step that reaches it, never a step leaving the bound
- * it stood on.
+ * `start + n * step` lands within about `Number.EPSILON * (|start| + |bound|)`
+ * of the exact sum when it lands near `bound`, and this takes 64 times that,
+ * so it absorbs rounding and nothing a step could overshoot by. Under half a
+ * step as well, because `start` is inside the bounds: a value that close to a
+ * bound is then the step that reaches it, never a step leaving the bound it
+ * stood on.
  */
 const tolerance = (spec: RampSpec, bound: number): number =>
-  spec.fractional ? Math.min(1e-9 * Math.max(1, Math.abs(bound)), Math.abs(spec.step) / 2) : 0
+  spec.fractional
+    ? Math.min(
+        64 * Number.EPSILON * (Math.abs(spec.start) + Math.abs(bound)),
+        Math.abs(spec.step) / 2
+      )
+    : 0
 
 /**
  * The tick after `stepCount`.

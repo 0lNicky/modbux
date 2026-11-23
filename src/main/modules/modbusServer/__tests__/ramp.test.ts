@@ -75,6 +75,30 @@ describe('nextRampTick', () => {
     expect(nextRampTick(spec, 0)).toEqual({ kind: 'hold' })
   })
 
+  // `1e-9 * |bound|` is 0.1 at 1e8, so a tolerance that grows with the bound
+  // alone wrote these overshoots as max.
+  it.each([
+    [1e8, 0.1, 1e8 + 0.05],
+    [1e8, 0.1, 1e8 + 0.06],
+    [1e9, 1, 1e9 + 0.5]
+  ])('holds when a float step from %d by %d overshoots a max of %d', (start, step, max) => {
+    const spec = { start, step, min: start, max, restart: false, fractional: true }
+    expect(nextRampTick(spec, 0)).toEqual({ kind: 'hold' })
+  })
+
+  // 12345.6 + 2 * 0.1 is 12345.800000000001.
+  it('writes a float max that a ramp far from 0 reaches only within rounding', () => {
+    const spec = {
+      ...base,
+      start: 12345.6,
+      step: 0.1,
+      min: 12345.6,
+      max: 12345.8,
+      fractional: true
+    }
+    expect(run(spec, 3)).toEqual([12345.7, 12345.8, 12345.6])
+  })
+
   it('reaches min after 600 float steps down', () => {
     const spec = { ...base, start: 80, step: -0.1, min: 20, max: 80, fractional: true }
     expect(run(spec, 600).at(-1)).toBe(20)
