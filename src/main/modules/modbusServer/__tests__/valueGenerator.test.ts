@@ -449,6 +449,30 @@ describe('ValueGenerator', () => {
       gen.dispose()
     })
 
+    // 0.1 * 3 is 0.30000000000000004, past a max of 0.3, so without the snap
+    // the third tick restarts and 0.3 never reaches the register.
+    it('writes a float max that the step reaches only within rounding, then restarts', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData, { dataType: 'float', start: 0, step: 0.1, min: 0, max: 0.3 })
+
+      /** The two words at address 0 read back as the float they encode, ABCD. */
+      const floatAt0 = (): number => {
+        const bytes = Buffer.alloc(4)
+        bytes.writeUInt16BE(wordAt(serverData, 0), 0)
+        bytes.writeUInt16BE(wordAt(serverData, 1), 2)
+        return bytes.readFloatBE(0)
+      }
+
+      const seen: number[] = []
+      for (let i = 0; i < 4; i++) {
+        vi.advanceTimersByTime(1000)
+        seen.push(floatAt0())
+      }
+      expect(seen).toEqual([Math.fround(0.1), Math.fround(0.2), Math.fround(0.3), 0])
+
+      gen.dispose()
+    })
+
     it('deletes its word on dispose', () => {
       const serverData = createServerData()
       const gen = ramp(serverData)
