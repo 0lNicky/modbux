@@ -27,7 +27,8 @@ import {
   holdsExact64Bits,
   MAX_UTF8_LENGTH,
   registerWidth,
-  ServerRegisterValue
+  ServerRegisterValue,
+  toRampDecimals
 } from './encoding'
 import { emptyRegisterMapping } from './default'
 
@@ -303,6 +304,18 @@ const unscale = (value: number, { scalingFactor = 1, interpolate }: PointScaling
   return scaled / scalingFactor
 }
 
+/**
+ * The raw distance an engineering `distance` covers under `scaling`, with its
+ * sign: `unscale` is affine, so this is `distance` times its slope.
+ */
+const unscaleDistance = (
+  distance: number,
+  { scalingFactor = 1, interpolate }: PointScaling
+): number =>
+  (interpolate
+    ? (distance * (interpolate.x2 - interpolate.x1)) / (interpolate.y2 - interpolate.y1)
+    : distance) / scalingFactor
+
 /** The engineering distance one raw unit covers under `scaling`. */
 const resolutionOf = ({ scalingFactor = 1, interpolate }: PointScaling): number =>
   Math.abs(
@@ -502,26 +515,27 @@ const rampGenerator = (
   }
   const rawStart = engineeringToRaw(start, dataType, scaling)
   if (!rawStart.ok) return reject(`Ramp start: ${rawStart.reason}`)
-  // `start + step` is unscaled without asking the data type whether it holds
-  // it, because the ramp never writes it: a step past a bound restarts or
-  // holds. `rawStart` has already refused a scaling `unscale` cannot undo.
-  const end = unscale(start + step, scaling)
   const whole = WHOLE_NUMBER_TYPES.includes(dataType)
-  const rawStep = (whole ? Math.round(end) : end) - rawStart.raw
-  if (whole && step !== 0 && (!isWhole(end) || rawStep === 0)) {
-    return reject(
-      `Ramp step: ${step} is smaller than, or not a multiple of, the resolution of ${resolutionOf(scaling)} this scaling gives a ${dataType}`
-    )
-  }
-  if (rawStep === 0) return reject('The ramp step is 0 after scaling')
+  // A float or double ramp holds `RAMP_STEP_DECIMALS` decimals. A scaled raw
+  // value is rounded to them, because 20 / 0.3 is 66.66666666666667 and the
+  // schema refuses it. An unscaled one is the number given, and the schema
+  // refuses it if it has more.
+  const toRaw = (raw: number): number => (whole || !scales(scaling) ? raw : toRampDecimals(raw))
+  const rawStep = whole
+    ? wholeRampStep(start, step, rawStart.raw, dataType, scaling)
+    : { ok: true as const, raw: toRaw(unscaleDistance(step, scaling)) }
+  if (!rawStep.ok) return rawStep
+  if (rawStep.raw === 0) return reject('The ramp step is 0 after scaling')
   const rawMin = engineeringToRaw(min, dataType, scaling)
   if (!rawMin.ok) return reject(`Generator min: ${rawMin.reason}`)
   const rawMax = engineeringToRaw(max, dataType, scaling)
   if (!rawMax.ok) return reject(`Generator max: ${rawMax.reason}`)
   // A negative factor turns the range around, so it is stored lowest first.
-  const low = Math.min(rawMin.raw, rawMax.raw)
-  const high = Math.max(rawMin.raw, rawMax.raw)
-  if (rawStart.raw < low || rawStart.raw > high) {
+  // `toRaw` never puts two values out of order, so start stays inside them.
+  const low = toRaw(Math.min(rawMin.raw, rawMax.raw))
+  const high = toRaw(Math.max(rawMin.raw, rawMax.raw))
+  const first = toRaw(rawStart.raw)
+  if (first < low || first > high) {
     return reject('The ramp start has to be between its min and max')
   }
   return {
@@ -531,11 +545,35 @@ const rampGenerator = (
       max: high,
       intervalMs,
       mode: 'ramp',
-      start: rawStart.raw,
-      step: rawStep,
+      start: first,
+      step: rawStep.raw,
       restart: generator.restart ?? true
     }
   }
+}
+
+/**
+ * The raw step of an integer ramp, or why the step is not a whole raw step.
+ *
+ * `start + step` is unscaled without asking the data type whether it holds
+ * it, because the ramp never writes it: a step past a bound restarts or
+ * holds. `rawStart` has already refused a scaling `unscale` cannot undo.
+ */
+const wholeRampStep = (
+  start: number,
+  step: number,
+  rawStart: number,
+  dataType: DataType,
+  scaling: PointScaling
+): { ok: true; raw: number } | { ok: false; reason: string } => {
+  const end = unscale(start + step, scaling)
+  const raw = Math.round(end) - rawStart
+  if (step !== 0 && (!isWhole(end) || raw === 0)) {
+    return reject(
+      `Ramp step: ${step} is smaller than, or not a multiple of, the resolution of ${resolutionOf(scaling)} this scaling gives a ${dataType}`
+    )
+  }
+  return { ok: true, raw }
 }
 
 /** The server half of a point: its fixed raw value, or its generator in raw values. */

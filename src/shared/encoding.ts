@@ -379,6 +379,9 @@ export const getRampStepError = (dataType: DataType, step: number): string | und
   return undefined
 }
 
+/** `value` rounded to the `RAMP_STEP_DECIMALS` decimals a float or double ramp holds. */
+export const toRampDecimals = (value: number): number => Number(value.toFixed(RAMP_STEP_DECIMALS))
+
 /**
  * A ramp step as the Step field shows it: no exponent, and no trailing zeros.
  * `String(1e-7)` is `1e-7`, which the field reads as 17.

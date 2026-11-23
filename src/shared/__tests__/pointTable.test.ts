@@ -806,6 +806,60 @@ describe('validatePointTable, server values', () => {
       ])
     })
 
+    // `80 + -0.1 - 80` is -0.09999999999999432, which the schema refuses for
+    // its decimals, so a raw step taken as a difference fails these.
+    it.each([
+      ['float', {}, { start: 80, step: -0.1, min: 20, max: 80 }, -0.1],
+      ['double', {}, { start: 80, step: -0.1, min: 20, max: 80 }, -0.1],
+      ['float', {}, { start: 0.1, step: 0.2, min: 0, max: 1 }, 0.2],
+      ['double', {}, { start: 0.1, step: 0.2, min: 0, max: 1 }, 0.2],
+      ['float', { scalingFactor: 0.1 }, { start: 0, step: 0.3, min: 0, max: 1 }, 3],
+      ['double', { scalingFactor: 0.1 }, { start: 0, step: 0.3, min: 0, max: 1 }, 3],
+      ['float', { scalingFactor: 0.1 }, { start: 80, step: -0.1, min: 20, max: 80 }, -1],
+      ['double', { scalingFactor: -0.1 }, { start: 0.1, step: 0.2, min: 0, max: 1 }, -2],
+      [
+        'double',
+        { interpolate: { x1: 0, x2: 10, y1: 0.1, y2: 0.4 } },
+        { start: 0.1, step: 0.03, min: 0.1, max: 0.4 },
+        1
+      ]
+    ] as const)(
+      'accepts a %s ramp under %j with %j, stepping %d raw',
+      (dataType, scaling, generator, rawStep) => {
+        const report = resolve({ dataType, ...scaling, generator: { mode: 'ramp', ...generator } })
+        expect(reasons(report)).toEqual([undefined])
+        expect(report.points[0]?.resolved?.generator?.step).toBe(rawStep)
+      }
+    )
+
+    // 20 / 0.3 is 66.66666666666667, past the 7 decimals the schema holds a
+    // float ramp to, and the bounds keep their order through the rounding.
+    it.each(['float', 'double'] as const)(
+      'rounds the raw start, min and max of a scaled %s ramp to the decimals the schema takes',
+      (dataType) => {
+        const report = resolve({
+          dataType,
+          scalingFactor: 0.3,
+          generator: { mode: 'ramp', start: 20, step: 0.3, min: 10, max: 40 }
+        })
+        expect(reasons(report)).toEqual([undefined])
+        expect(report.points[0]?.resolved?.generator).toMatchObject({
+          start: 66.6666667,
+          step: 1,
+          min: 33.3333333,
+          max: 133.3333333
+        })
+      }
+    )
+
+    it('refuses an unscaled float ramp step with more decimals than the schema takes', () => {
+      const report = resolve({
+        dataType: 'float',
+        generator: { mode: 'ramp', start: 0, step: 0.123456789, min: 0, max: 1 }
+      })
+      expect(reasons(report)[0]).toMatch(/at most 7 decimals/)
+    })
+
     it('rejects a step finer than the scaling resolution with the step reason', () => {
       const report = resolve({
         scalingFactor: 10,
