@@ -235,6 +235,13 @@ export const RegisterParamsSchema = RegisterParamsBasePartSchema.and(
     issue('step', 'A ramp step has to be a finite number')
   }
   if (params.min > params.max) issue('min', 'A ramp needs a min no greater than its max')
+  if (isIntegerDataType(params.dataType)) {
+    for (const field of ['min', 'max'] as const) {
+      if (!Number.isInteger(params[field])) {
+        issue(field, `A ${params.dataType} ramp ${field} has to be a whole number`)
+      }
+    }
+  }
 
   const { start, step } = params
   if (start === undefined) {

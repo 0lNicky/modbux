@@ -18,6 +18,21 @@ const rampWithoutStepAt0 = {
   params: { ...base, address: 0, min: 0, max: 10, interval: 1000, mode: 'ramp', start: 0 }
 }
 
+/** A uint16 ramp whose min and max are not whole, which the schema refuses. */
+const rampWithFractionalBoundsAt0 = {
+  value: 1,
+  params: {
+    ...base,
+    address: 0,
+    min: 0.5,
+    max: 4.5,
+    interval: 1000,
+    mode: 'ramp',
+    start: 1,
+    step: 1
+  }
+}
+
 /** A random generator whose min a uint16 cannot hold. */
 const outOfRangeMinAt0 = {
   value: 0,
@@ -56,16 +71,22 @@ beforeEach(() => {
 })
 
 describe('a store at its own version holding a ramp the schema refuses', () => {
-  it('comes up without that ramp, with the rest of its server and its address free', async () => {
-    localStorage.setItem(SERVER_ZUSTAND_STORAGE_KEY, persisted(rampWithoutStepAt0))
+  it.each([
+    ['without a step', rampWithoutStepAt0],
+    ['with a min of 0.5 and a max of 4.5', rampWithFractionalBoundsAt0]
+  ])(
+    'comes up without a ramp %s, with the rest of its server and its address free',
+    async (_name, ramp) => {
+      localStorage.setItem(SERVER_ZUSTAND_STORAGE_KEY, persisted(ramp))
 
-    const { useServerZustand } = await import('../server.zustand')
-    const server = useServerZustand.getState().servers.u
+      const { useServerZustand } = await import('../server.zustand')
+      const server = useServerZustand.getState().servers.u
 
-    expect(Object.keys(server?.registers['1']?.holding_registers ?? {})).toEqual(['2'])
-    expect(server?.usedAddresses['1']?.holding_registers).toEqual([2])
-    expect(useServerZustand.getState().configReset).toBeUndefined()
-  })
+      expect(Object.keys(server?.registers['1']?.holding_registers ?? {})).toEqual(['2'])
+      expect(server?.usedAddresses['1']?.holding_registers).toEqual([2])
+      expect(useServerZustand.getState().configReset).toBeUndefined()
+    }
+  )
 
   // The drop is for a ramp alone. Any other register the schema refuses costs
   // the server's registers as it did before.

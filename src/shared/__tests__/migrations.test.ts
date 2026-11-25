@@ -570,6 +570,7 @@ describe('configMigration', () => {
         }
       }
       const rampWithoutStep = { ...rampAt0.params, step: undefined }
+      const rampWithFractionalBounds = { ...rampAt0.params, start: 1, min: 0.5, max: 4.5 }
       const outOfRangeMinAt0 = {
         value: 0,
         params: { ...base, address: 0, min: -1, max: 10, interval: 1000 }
@@ -604,6 +605,15 @@ describe('configMigration', () => {
           expect(addresses(configFile(version, { value: 0, params: rampWithoutStep }))).toEqual([
             '2'
           ])
+        }
+      )
+
+      it.each([3, CURRENT_SERVER_CONFIG_VERSION])(
+        'drops a uint16 ramp with a min of 0.5 and a max of 4.5 from a v%i file and loads the rest',
+        (version) => {
+          expect(
+            addresses(configFile(version, { value: 1, params: rampWithFractionalBounds }))
+          ).toEqual(['2'])
         }
       )
 

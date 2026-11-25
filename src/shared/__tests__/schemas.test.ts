@@ -571,6 +571,14 @@ describe('Server RegisterParamsSchema — ramp generator', () => {
     expect(issuePaths({ ...ramp, start: 0.5 })).toContainEqual(['start'])
   })
 
+  it.each(['min', 'max'] as const)('rejects a fractional %s on an integer ramp', (field) => {
+    expect(issuePaths({ ...ramp, start: 1, min: 0.5, max: 4.5 })).toContainEqual([field])
+  })
+
+  it('accepts a fractional min and max on an integer random generator', () => {
+    expect(RegisterParamsSchema.safeParse({ ...random, min: 0.5, max: 4.5 }).success).toBe(true)
+  })
+
   it('accepts a fractional step on a float', () => {
     expect(RegisterParamsSchema.safeParse({ ...ramp, dataType: 'float', step: 0.5 }).success).toBe(
       true
