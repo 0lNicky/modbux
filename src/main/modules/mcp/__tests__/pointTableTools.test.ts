@@ -597,7 +597,9 @@ describe('server_apply_point_table', () => {
     })
   })
 
-  it('reports a ramp point accepted on a dry run', async () => {
+  // A random generator between 20 and 80 is also accepted, so the report
+  // has to carry the ramp's own fields.
+  it('reports a ramp point accepted on a dry run, resolved as a ramp', async () => {
     const context = serverContext()
     const client = await connectInMemory(context)
 
@@ -619,7 +621,21 @@ describe('server_apply_point_table', () => {
     })
 
     expect(commandNames(context)).toEqual(['server_list'])
-    expect(jsonOf(result)).toMatchObject({ dryRun: true, report: { accepted: 1, rejected: 0 } })
+    expect(jsonOf(result)).toMatchObject({
+      dryRun: true,
+      report: {
+        accepted: 1,
+        rejected: 0,
+        points: [
+          {
+            status: 'accepted',
+            resolved: {
+              generator: { mode: 'ramp', start: 80, step: -1, min: 20, max: 80, restart: true }
+            }
+          }
+        ]
+      }
+    })
   })
 
   it("sends the accepted points to the unit the server shows, in the table's byte order", async () => {
