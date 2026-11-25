@@ -24,13 +24,19 @@ const decimalsOf = (value: number): number => {
 }
 
 /**
- * `value` times `10 ** decimals` as a `BigInt`. From 1e21 up `toFixed` writes
- * an exponent, and every double that large is a whole number.
+ * `value` times `10 ** decimals` as a `BigInt`, for `decimals` no fewer than
+ * `decimalsOf(value)`. The number is written at its own decimals and the rest
+ * is a power of ten, because `toFixed` past those decimals prints the digits
+ * of the float64: 1000000000000.1 at 7 is 1000000000000.0999756. From 1e21
+ * up `toFixed` writes an exponent, and every double that large is a whole
+ * number.
  */
-const scaled = (value: number, decimals: number): bigint =>
-  Math.abs(value) < 1e21
-    ? BigInt(value.toFixed(decimals).replace('.', ''))
-    : BigInt(value) * 10n ** BigInt(decimals)
+const scaled = (value: number, decimals: number): bigint => {
+  const own = decimalsOf(value)
+  const digits =
+    Math.abs(value) < 1e21 ? BigInt(value.toFixed(own).replace('.', '')) : BigInt(value)
+  return digits * 10n ** BigInt(decimals - own)
+}
 
 /**
  * The tick after `stepCount`.

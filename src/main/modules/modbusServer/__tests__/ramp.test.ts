@@ -122,6 +122,40 @@ describe('nextRampTick', () => {
     expect(run(spec, 4)).toEqual([-4503599627370494, 3, 4503599627370500])
   })
 
+  // `toFixed(7)` prints 1000000000000.1 as 1000000000000.0999756 and
+  // 1000000000000.2 as 1000000000000.1999512, so each number is read at its
+  // own decimals.
+  it('writes a double max near 1e12 beside a min of 1e-7, then holds', () => {
+    const spec = {
+      start: 1000000000000.1,
+      step: 0.1,
+      min: 1e-7,
+      max: 1000000000000.2,
+      restart: false
+    }
+    expect(run(spec, 3)).toEqual([1000000000000.2])
+  })
+
+  it('writes a double max near 1e12 that a step of 1e-7 reaches after a million steps', () => {
+    const spec = {
+      start: 1000000000000.1,
+      step: 1e-7,
+      min: 0,
+      max: 1000000000000.2,
+      restart: false
+    }
+    expect(nextRampTick(spec, 999999)).toEqual({
+      kind: 'value',
+      value: 1000000000000.2,
+      stepCount: 1000000
+    })
+  })
+
+  it('writes a double min near -1e12 that a falling step reaches beside a max of 7 decimals', () => {
+    const spec = { start: -1e12, step: -0.1, min: -1000000000000.1, max: 0.2000001, restart: false }
+    expect(run(spec, 3)).toEqual([-1000000000000.1])
+  })
+
   it('reaches min after 600 float steps down', () => {
     const spec = { ...base, start: 80, step: -0.1, min: 20, max: 80 }
     expect(run(spec, 600).at(-1)).toBe(20)

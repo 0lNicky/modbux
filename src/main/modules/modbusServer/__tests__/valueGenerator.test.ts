@@ -488,6 +488,38 @@ describe('ValueGenerator', () => {
       gen.dispose()
     })
 
+    // A min with 7 decimals made `toFixed(7)` print the float64 digits of
+    // start and max, 1000000000000.0999756 and 1000000000000.1999512.
+    it('writes a double max near 1e12 beside a min of 1e-7, then holds', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData, {
+        dataType: 'double',
+        start: 1000000000000.1,
+        step: 0.1,
+        min: 1e-7,
+        max: 1000000000000.2,
+        restart: false
+      })
+
+      /** The four words at address 0 read back as the double they encode, ABCD. */
+      const doubleAt0 = (): number => {
+        const bytes = Buffer.alloc(8)
+        for (let word = 0; word < 4; word++) {
+          bytes.writeUInt16BE(wordAt(serverData, word), 2 * word)
+        }
+        return bytes.readDoubleBE(0)
+      }
+
+      const seen = [doubleAt0()]
+      for (let i = 0; i < 3; i++) {
+        vi.advanceTimersByTime(1000)
+        seen.push(doubleAt0())
+      }
+      expect(seen).toEqual([1000000000000.1, 1000000000000.2, 1000000000000.2, 1000000000000.2])
+
+      gen.dispose()
+    })
+
     it('deletes its word on dispose', () => {
       const serverData = createServerData()
       const gen = ramp(serverData)
