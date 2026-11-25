@@ -287,6 +287,14 @@ const WHOLE_NUMBER_TYPES: readonly DataType[] = [
 const isWhole = (value: number): boolean =>
   Math.abs(value - Math.round(value)) <= 1e-9 * Math.max(1, Math.abs(value))
 
+/**
+ * Whether a ramp's raw `value` is whole to within what one `unscale` rounds
+ * off: 0.3 / 0.1 is 2.9999999999999996. `isWhole` takes 1e-9 of the value,
+ * which at 1e9 took 1000000000.25 for whole and wrote 1000000000.
+ */
+const isRampWhole = (value: number): boolean =>
+  Math.abs(value - Math.round(value)) <= 16 * Number.EPSILON * Math.max(1, Math.abs(value))
+
 /** Whether a scaling says anything: a factor other than 1, or an interpolation. */
 const scales = ({ scalingFactor, interpolate }: PointScaling): boolean =>
   (scalingFactor !== undefined && scalingFactor !== 1) || interpolate !== undefined
@@ -538,6 +546,20 @@ const rampGenerator = (
   if (!rawMin.ok) return reject(`Generator min: ${rawMin.reason}`)
   const rawMax = engineeringToRaw(max, dataType, scaling)
   if (!rawMax.ok) return reject(`Generator max: ${rawMax.reason}`)
+  if (whole) {
+    for (const [label, value] of [
+      ['Ramp start', start],
+      ['Generator min', min],
+      ['Generator max', max]
+    ] as const) {
+      const raw = unscale(value, scaling)
+      if (!isRampWhole(raw)) {
+        return reject(
+          `${label}: Engineering value ${value} is raw ${raw}, and a ${dataType} holds whole numbers`
+        )
+      }
+    }
+  }
   // A negative factor turns the range around, so it is stored lowest first.
   // The start is compared before `toRaw`, which can round a start past max
   // onto it, and `toRaw` never puts two values out of order.
@@ -564,9 +586,8 @@ const rampGenerator = (
  * The raw step of an integer ramp, or why the step is not a whole raw step.
  *
  * The step is unscaled as a distance rather than as `start + step`, because
- * `isWhole` grows with the number it measures: beside a start of 1e9 it took
- * 1000000001.25 for whole. The start has already refused a scaling
- * `unscaleDistance` cannot undo.
+ * `isRampWhole` grows with the number it measures. The start has already
+ * refused a scaling `unscaleDistance` cannot undo.
  */
 const wholeRampStep = (
   step: number,
@@ -575,7 +596,7 @@ const wholeRampStep = (
 ): { ok: true; raw: number } | { ok: false; reason: string } => {
   const distance = unscaleDistance(step, scaling)
   const raw = Math.round(distance)
-  if (step !== 0 && (!isWhole(distance) || raw === 0)) {
+  if (step !== 0 && (!isRampWhole(distance) || raw === 0)) {
     return reject(
       `Ramp step: ${step} is smaller than, or not a multiple of, the resolution of ${resolutionOf(scaling)} this scaling gives a ${dataType}`
     )

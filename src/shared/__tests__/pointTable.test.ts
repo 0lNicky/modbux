@@ -793,8 +793,6 @@ describe('validatePointTable, server values', () => {
       }
     )
 
-    // Raw 400000000.1 is whole to `isWhole`, whose tolerance grows with the
-    // value, so the step rounds to 0 raw rather than failing as a fraction.
     it('names the resolution when a step rounds to 0 raw beside a large start', () => {
       const report = resolve({
         dataType: 'uint32',
@@ -868,8 +866,7 @@ describe('validatePointTable, server values', () => {
       expect(reasons(report)[0]).toMatch(/^Ramp step: /)
     })
 
-    // `isWhole` measured `unscale(start + step)`, whose tolerance grows with
-    // the start: at 1e9 it took 1000000001.25 for whole and stored a step of 1.
+    // A step measured as `unscale(start + step)` is measured beside 1e9.
     it('names the resolution of a uint32 step of 1.25 beside a start of 1e9', () => {
       const report = resolve({
         dataType: 'uint32',
@@ -878,6 +875,42 @@ describe('validatePointTable, server values', () => {
       expect(reasons(report)).toEqual([
         'Ramp step: 1.25 is smaller than, or not a multiple of, the resolution of 1 this scaling gives a uint32'
       ])
+    })
+
+    // 1e-9 of the value, which `isWhole` takes, is 1 at 1e9.
+    it('names the resolution of an unscaled uint32 step of 1000000000.25', () => {
+      const report = resolve({
+        dataType: 'uint32',
+        generator: { mode: 'ramp', start: 0, step: 1000000000.25, min: 0, max: 2e9 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1000000000.25 is smaller than, or not a multiple of, the resolution of 1 this scaling gives a uint32'
+      ])
+    })
+
+    it.each([
+      [{ start: 1000000000.25, min: 0, max: 1e9 }, 'Ramp start', 1000000000.25],
+      [{ start: 1e9, min: 0.25, max: 2e9 }, 'Generator min', 0.25],
+      [{ start: 0, min: 0, max: 1000000000.25 }, 'Generator max', 1000000000.25]
+    ])('refuses an unscaled uint32 ramp with %j as a fraction', (bounds, label, value) => {
+      const report = resolve({
+        dataType: 'uint32',
+        generator: { mode: 'ramp', step: 1, ...bounds }
+      })
+      expect(reasons(report)).toEqual([
+        `${label}: Engineering value ${value} is raw ${value}, and a uint32 holds whole numbers`
+      ])
+    })
+
+    // 0.3 / 0.1 is 2.9999999999999996.
+    it('accepts a uint32 ramp whose scaled start and step miss a whole raw value by rounding', () => {
+      const report = resolve({
+        dataType: 'uint32',
+        scalingFactor: 0.1,
+        generator: { mode: 'ramp', start: 0.3, step: 0.3, min: 0.3, max: 1000 }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({ start: 3, step: 3, min: 3 })
     })
 
     // `unscale(1e16 + 1)` is `unscale(1e16)`, because doubles there are 2
@@ -892,9 +925,7 @@ describe('validatePointTable, server values', () => {
       expect(report.points[0]?.resolved?.generator).toMatchObject({ start: 0, step: 1, max: 10 })
     })
 
-    // 1e-10 is whole to `isWhole`, so the step rounds to 0 raw rather than
-    // failing as a fraction.
-    it('names the resolution of a uint16 step of 1e-10, which rounds to 0 raw', () => {
+    it('names the resolution of a uint16 step of 1e-10', () => {
       const report = resolve({
         dataType: 'uint16',
         generator: { mode: 'ramp', start: 0, step: 1e-10, min: 0, max: 10 }
