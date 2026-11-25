@@ -1025,6 +1025,80 @@ describe('validatePointTable, server values', () => {
       }
     )
 
+    // 8.7 / 10 is 0.8699999999999999 and 0.3 / 0.1 is 2.9999999999999996, a
+    // float error of the division that raw 0.87 and raw 3 read back across.
+    it.each([
+      [
+        'double',
+        10,
+        { start: 0, step: 2.9, min: 0, max: 8.7 },
+        { start: 0, step: 0.29, min: 0, max: 0.87 }
+      ],
+      [
+        'double',
+        0.1,
+        { start: 0, step: 0.1, min: 0, max: 0.3 },
+        { start: 0, step: 1, min: 0, max: 3 }
+      ],
+      [
+        'float',
+        0.1,
+        { start: 0, step: 0.1, min: 0, max: 0.3 },
+        { start: 0, step: 1, min: 0, max: 3 }
+      ],
+      [
+        'double',
+        -0.1,
+        { start: 0, step: 0.1, min: 0, max: 0.3 },
+        { start: 0, step: -1, min: -3, max: 0 }
+      ],
+      [
+        'float',
+        -0.1,
+        { start: 0, step: 0.1, min: 0, max: 0.3 },
+        { start: 0, step: -1, min: -3, max: 0 }
+      ],
+      [
+        'double',
+        0.1,
+        { start: 0.3, step: 0.1, min: 0.3, max: 0.3 },
+        { start: 3, step: 1, min: 3, max: 3 }
+      ],
+      [
+        'double',
+        100,
+        { start: 0.0011, step: 0.001, min: 0.0011, max: 0.01 },
+        { start: 0.000011, step: 0.00001, min: 0.000011, max: 0.0001 }
+      ]
+    ] as const)(
+      'keeps the bounds of a %s ramp under a factor of %d with %j where their raw value reads back as them',
+      (dataType, scalingFactor, generator, raw) => {
+        const report = resolve({
+          dataType,
+          scalingFactor,
+          generator: { mode: 'ramp', restart: false, ...generator }
+        })
+        expect(reasons(report)).toEqual([undefined])
+        expect(report.points[0]?.resolved?.generator).toMatchObject(raw)
+      }
+    )
+
+    it('keeps the bounds of a float ramp under a factor of 0.001 and an offset of 1.5', () => {
+      const report = resolve({
+        dataType: 'float',
+        scalingFactor: 0.001,
+        interpolate: { x1: 0, x2: 1, y1: 1.5, y2: 2.5 },
+        generator: { mode: 'ramp', start: 0, step: 0.3, min: 0, max: 1.2, restart: false }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        start: -1500,
+        step: 300,
+        min: -1500,
+        max: -300
+      })
+    })
+
     it('refuses a scaled double ramp whose bounds hold no raw value at 7 decimals', () => {
       const report = resolve({
         dataType: 'double',

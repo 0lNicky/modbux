@@ -699,6 +699,41 @@ describe('server_apply_point_table', () => {
     expect(jsonOf(result)).toMatchObject({ applied: true, byteOrder: 'CDAB', unitIds: [2] })
   })
 
+  // 8.7 / 10 is 0.8699999999999999, and raw 0.87 reads back as 8.7.
+  it('sends a scaled double ramp the max it asked for when raw 7 decimals hold it', async () => {
+    const context = serverContext({ server_apply_point_table: async () => SIM_VALUES })
+    const client = await connectInMemory(context)
+
+    await client.callTool({
+      name: 'server_apply_point_table',
+      arguments: {
+        uuid: 'sim',
+        points: [
+          {
+            name: 'Level',
+            address: 0,
+            registerType: 'holding_registers',
+            dataType: 'double',
+            scalingFactor: 10,
+            generator: { mode: 'ramp', start: 0, step: 2.9, min: 0, max: 8.7, restart: false }
+          }
+        ]
+      }
+    })
+
+    const payload = sentPayload(context, 'server_apply_point_table') as {
+      units: Record<string, { holding_registers: Record<string, { params: unknown }> }>
+    }
+    const [unit] = Object.values(payload.units)
+    expect(unit?.holding_registers[0]?.params).toMatchObject({
+      mode: 'ramp',
+      start: 0,
+      step: 0.29,
+      min: 0,
+      max: 0.87
+    })
+  })
+
   it('sends to the unit the input names', async () => {
     const context = serverContext({ server_apply_point_table: async () => SIM_VALUES })
     const client = await connectInMemory(context)

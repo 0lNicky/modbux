@@ -315,6 +315,39 @@ const unscale = (value: number, { scalingFactor = 1, interpolate }: PointScaling
   return scaled / scalingFactor
 }
 
+/** `raw` through `scaling` as `scaleValue` applies it, before any rounding for display. */
+const rescale = (raw: number, { scalingFactor = 1, interpolate }: PointScaling): number => {
+  const scaled = raw * scalingFactor
+  return interpolate
+    ? interpolate.y1 +
+        ((scaled - interpolate.x1) * (interpolate.y2 - interpolate.y1)) /
+          (interpolate.x2 - interpolate.x1)
+    : scaled
+}
+
+/**
+ * How far `rescale` of a raw value near `engineering` can land from the exact
+ * product: a multiply, and under an interpolation a subtract, a multiply, a
+ * divide and an add, each rounding by half an epsilon of the largest number
+ * it handles. That is `engineering` itself, or an interpolation's y1 and y2
+ * and its x1 and x2 carried through the slope.
+ */
+const rescaleError = (engineering: number, { interpolate }: PointScaling): number => {
+  if (!interpolate) return 4 * Number.EPSILON * Math.abs(engineering)
+  const slope = Math.abs((interpolate.y2 - interpolate.y1) / (interpolate.x2 - interpolate.x1))
+  return (
+    4 *
+    Number.EPSILON *
+    Math.max(
+      Math.abs(engineering),
+      Math.abs(interpolate.y1),
+      Math.abs(interpolate.y2),
+      slope * Math.abs(interpolate.x1),
+      slope * Math.abs(interpolate.x2)
+    )
+  )
+}
+
 /**
  * The raw distance an engineering `distance` covers under `scaling`, with its
  * sign: `unscale` is affine, so this is `distance` times its slope.
@@ -586,12 +619,21 @@ const rampGenerator = (
   if (rawStart.raw < low || rawStart.raw > high) {
     return reject('The ramp start has to be between its min and max')
   }
-  // `toRaw` rounds to the nearest, which can take a bound outside the range
-  // asked for, so there min goes up a unit and max down one, and the start
-  // stays between them.
+  // `toRaw` rounds a bound to the nearest 7 decimals. It is kept while it
+  // scales back inside min to max up to `rescaleError`, as raw 0.87 does for a
+  // max of 8.7 under a factor of 10 though 8.7 / 10 is 0.8699999999999999.
+  // Past that it is outside, and min goes up a unit or max down one: raw
+  // 1.6e-7 rounds to 2e-7, which is 4e-7 under a factor of 2. Every raw value
+  // written lies between the two, and `rescale` is monotonic, so none scales
+  // further outside min to max than `rescaleError`.
   const unit = 1 / 10 ** RAMP_DECIMALS
-  const rawLow = toRaw(low) < low ? toRampDecimals(toRaw(low) + unit) : toRaw(low)
-  const rawHigh = toRaw(high) > high ? toRampDecimals(toRaw(high) - unit) : toRaw(high)
+  const error = rescaleError(Math.max(Math.abs(min), Math.abs(max)), scaling)
+  const reachesInside = (raw: number): boolean => {
+    const engineering = rescale(raw, scaling)
+    return engineering >= Math.min(min, max) - error && engineering <= Math.max(min, max) + error
+  }
+  const rawLow = reachesInside(toRaw(low)) ? toRaw(low) : toRampDecimals(toRaw(low) + unit)
+  const rawHigh = reachesInside(toRaw(high)) ? toRaw(high) : toRampDecimals(toRaw(high) - unit)
   if (rawLow > rawHigh) {
     return reject(
       `Ramp min ${min} and max ${max} hold no raw value at ${RAMP_DECIMALS} decimals under this scaling`
