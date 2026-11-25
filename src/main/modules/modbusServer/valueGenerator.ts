@@ -9,12 +9,13 @@ import {
   RegisterValueGenerator,
   registerWidth,
   UnitIdString,
-  ValuedDataType
+  ValuedDataType,
+  nextRampTick,
+  RampSpec
 } from '@shared'
 import { Windows } from '../../windows'
 import { encodeRegisters, writeRegisters } from './registers'
 import { round } from 'lodash'
-import { nextRampTick, RampSpec } from './ramp'
 
 type ValueGeneratorParams = {
   uuid: string
