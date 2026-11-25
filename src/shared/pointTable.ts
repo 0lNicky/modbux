@@ -143,7 +143,7 @@ export const PointGeneratorSchema = z.object({
     .number()
     .optional()
     .describe(
-      'A ramp: what each interval adds, in engineering units; negative counts down. Not 0, and a whole raw step after scaling'
+      'A ramp: what each interval adds, in engineering units; negative counts down. Not 0. On an integer type the raw step is whole after scaling. On float and double the raw step holds 7 raw decimals: unscaled it has no more, and scaled it is rounded to them and refused if that moves it by more than a millionth of itself'
     ),
   restart: z
     .boolean()

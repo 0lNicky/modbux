@@ -5,6 +5,7 @@ import {
   engineeringToRaw,
   Point,
   pointComment,
+  PointGeneratorSchema,
   PointSchema,
   readWindowOf,
   resolveAddress,
@@ -645,6 +646,24 @@ describe('validatePointTable, server values', () => {
   })
 
   describe('a ramp generator', () => {
+    // It said a whole raw step for every type, and an unscaled double takes 0.5.
+    it('describes a whole raw step for an integer type and 7 raw decimals for a float', () => {
+      const description = PointGeneratorSchema.shape.step.description
+      expect(description).toContain('On an integer type the raw step is whole')
+      expect(description).toContain('7 raw decimals')
+      const report = validatePointTable(
+        [
+          serverPoint({
+            address: 0,
+            dataType: 'double',
+            generator: { mode: 'ramp', start: 0, step: 0.5, min: 0, max: 3 }
+          })
+        ],
+        { target: 'server' }
+      )
+      expect(report.points[0]?.resolved?.generator?.step).toBe(0.5)
+    })
+
     const ramp = { mode: 'ramp', start: 0, step: 1, min: 0, max: 100 } as const
     const resolve = (fields: Partial<ServerPoint>): ReturnType<typeof validatePointTable> =>
       validatePointTable([serverPoint({ address: 0, ...fields })], { target: 'server' })
