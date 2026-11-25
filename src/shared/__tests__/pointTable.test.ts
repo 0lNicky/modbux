@@ -831,9 +831,10 @@ describe('validatePointTable, server values', () => {
     )
 
     // 20 / 0.3 is 66.66666666666667, past the 7 decimals the schema holds a
-    // float ramp to, and the bounds keep their order through the rounding.
+    // float ramp to. 10 / 0.3 rounds up and 40 / 0.3 down, so 0.3 times
+    // either is inside 10 to 40.
     it.each(['float', 'double'] as const)(
-      'rounds the raw start, min and max of a scaled %s ramp to the decimals the schema takes',
+      'rounds the raw start of a scaled %s ramp to the decimals the schema takes, and its bounds inward',
       (dataType) => {
         const report = resolve({
           dataType,
@@ -844,7 +845,7 @@ describe('validatePointTable, server values', () => {
         expect(report.points[0]?.resolved?.generator).toMatchObject({
           start: 66.6666667,
           step: 1,
-          min: 33.3333333,
+          min: 33.3333334,
           max: 133.3333333
         })
       }
@@ -956,6 +957,46 @@ describe('validatePointTable, server values', () => {
         start: 133.3333333,
         max: 133.3333333
       })
+    })
+
+    // Raw max 1.6e-7 rounded to the nearest 7 decimals is 2e-7, which writes
+    // an engineering 4e-7 on the second step.
+    it.each([
+      [
+        { start: 0, min: 0, max: 3.2e-7 },
+        { start: 0, min: 0, max: 1e-7 }
+      ],
+      [
+        { start: 0, min: -3.2e-7, max: 0 },
+        { start: 0, min: -1e-7, max: 0 }
+      ],
+      [
+        { start: 3.2e-7, min: 0, max: 3.2e-7 },
+        { start: 1e-7, min: 0, max: 1e-7 }
+      ],
+      [
+        { start: 0.6, min: 0.6, max: 4.2 },
+        { start: 0.3, min: 0.3, max: 2.1 }
+      ]
+    ])('keeps a scaled double ramp with %j inside its bounds as %j raw', (bounds, raw) => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 2,
+        generator: { mode: 'ramp', step: 2e-7, restart: false, ...bounds }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({ ...raw, step: 1e-7 })
+    })
+
+    it('refuses a scaled double ramp whose bounds hold no raw value at 7 decimals', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 2,
+        generator: { mode: 'ramp', start: 1.2e-7, step: 2e-7, min: 1.2e-7, max: 1.6e-7 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp min 1.2e-7 and max 1.6e-7 hold no raw value at 7 decimals under this scaling'
+      ])
     })
 
     // Raw 1e-8 rounds to 0 at 7 decimals, and the reason read as if the step

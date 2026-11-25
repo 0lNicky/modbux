@@ -562,20 +562,31 @@ const rampGenerator = (
   }
   // A negative factor turns the range around, so it is stored lowest first.
   // The start is compared before `toRaw`, which can round a start past max
-  // onto it, and `toRaw` never puts two values out of order.
+  // onto it.
   const low = Math.min(rawMin.raw, rawMax.raw)
   const high = Math.max(rawMin.raw, rawMax.raw)
   if (rawStart.raw < low || rawStart.raw > high) {
     return reject('The ramp start has to be between its min and max')
   }
+  // `toRaw` rounds to the nearest, which can take a bound outside the range
+  // asked for, so there min goes up a unit and max down one, and the start
+  // stays between them.
+  const unit = 1 / 10 ** RAMP_DECIMALS
+  const rawLow = toRaw(low) < low ? toRampDecimals(toRaw(low) + unit) : toRaw(low)
+  const rawHigh = toRaw(high) > high ? toRampDecimals(toRaw(high) - unit) : toRaw(high)
+  if (rawLow > rawHigh) {
+    return reject(
+      `Ramp min ${min} and max ${max} hold no raw value at ${RAMP_DECIMALS} decimals under this scaling`
+    )
+  }
   return {
     ok: true,
     generator: {
-      min: toRaw(low),
-      max: toRaw(high),
+      min: rawLow,
+      max: rawHigh,
       intervalMs,
       mode: 'ramp',
-      start: toRaw(rawStart.raw),
+      start: Math.min(Math.max(toRaw(rawStart.raw), rawLow), rawHigh),
       step: rawStep.raw,
       restart: generator.restart ?? true
     }
