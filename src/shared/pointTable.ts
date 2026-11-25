@@ -138,7 +138,9 @@ export const PointGeneratorSchema = z.object({
   start: z
     .number()
     .optional()
-    .describe('A ramp: the value it starts at and returns to, in engineering units'),
+    .describe(
+      'A ramp: the value it starts at and returns to, in engineering units. On float and double under a scaling, its raw value is rounded to 7 decimals and refused if that moves it by more than a millionth of itself'
+    ),
   step: z
     .number()
     .optional()
@@ -508,8 +510,11 @@ const pointDataType = (
   return { ok: true, dataType: parsed.data }
 }
 
-/** The most a float or double ramp step may move, as a part of itself, when rounded to raw decimals. */
-const RAMP_STEP_ROUNDING = 1e-6
+/**
+ * The most a float or double ramp's step or start may move, as a part of
+ * itself, when rounded to raw decimals.
+ */
+const RAMP_ROUNDING = 1e-6
 
 /** A ramp in raw values: the bounds lowest first, and the step as the raw distance it covers. */
 const rampGenerator = (
@@ -540,7 +545,7 @@ const rampGenerator = (
   if (!rawStep.ok) return rawStep
   // `wholeRampStep` answers these for an integer type; here `toRaw` has
   // rounded a float or double step to 7 raw decimals. A step it moves by more
-  // than `RAMP_STEP_ROUNDING` of itself is a different step on the wire:
+  // than `RAMP_ROUNDING` of itself is a different step on the wire:
   // under a factor of 1e7, 1.49 became 1. 0.1 under a factor of 0.3 is raw
   // 0.33333333333333337 and moves by about 1e-7 of itself.
   const resolution = resolutionOf(scaling) / 10 ** RAMP_DECIMALS
@@ -549,7 +554,7 @@ const rampGenerator = (
       `Ramp step: ${step} is smaller than the resolution of ${resolution} this scaling gives a ${dataType}`
     )
   }
-  if (!whole && Math.abs(rawStep.raw - exactStep) > RAMP_STEP_ROUNDING * Math.abs(exactStep)) {
+  if (!whole && Math.abs(rawStep.raw - exactStep) > RAMP_ROUNDING * Math.abs(exactStep)) {
     return reject(
       `Ramp step: ${step} is not a multiple of the resolution of ${resolution} this scaling gives a ${dataType}`
     )
@@ -592,6 +597,15 @@ const rampGenerator = (
       `Ramp min ${min} and max ${max} hold no raw value at ${RAMP_DECIMALS} decimals under this scaling`
     )
   }
+  // The start written is the rounded start held between the rounded bounds,
+  // and it is refused on the step's rule: a start of 1.49 under a factor of
+  // 1e7 was written as 1.
+  const rawStartWritten = Math.min(Math.max(toRaw(rawStart.raw), rawLow), rawHigh)
+  if (Math.abs(rawStartWritten - rawStart.raw) > RAMP_ROUNDING * Math.abs(rawStart.raw)) {
+    return reject(
+      `Ramp start: ${start} is not a multiple of the resolution of ${resolution} this scaling gives a ${dataType}`
+    )
+  }
   return {
     ok: true,
     generator: {
@@ -599,7 +613,7 @@ const rampGenerator = (
       max: rawHigh,
       intervalMs,
       mode: 'ramp',
-      start: Math.min(Math.max(toRaw(rawStart.raw), rawLow), rawHigh),
+      start: rawStartWritten,
       step: rawStep.raw,
       restart: generator.restart ?? true
     }

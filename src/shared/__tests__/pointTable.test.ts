@@ -647,10 +647,13 @@ describe('validatePointTable, server values', () => {
 
   describe('a ramp generator', () => {
     // It said a whole raw step for every type, and an unscaled double takes 0.5.
-    it('describes a whole raw step for an integer type and 7 raw decimals for a float', () => {
+    it('describes the raw rules of a ramp step and start per data type', () => {
       const description = PointGeneratorSchema.shape.step.description
       expect(description).toContain('On an integer type the raw step is whole')
       expect(description).toContain('7 raw decimals')
+      expect(PointGeneratorSchema.shape.start.description).toContain(
+        'refused if that moves it by more than a millionth of itself'
+      )
       const report = validatePointTable(
         [
           serverPoint({
@@ -990,10 +993,6 @@ describe('validatePointTable, server values', () => {
         { start: 0, min: -1e-7, max: 0 }
       ],
       [
-        { start: 3.2e-7, min: 0, max: 3.2e-7 },
-        { start: 1e-7, min: 0, max: 1e-7 }
-      ],
-      [
         { start: 0.6, min: 0.6, max: 4.2 },
         { start: 0.3, min: 0.3, max: 2.1 }
       ]
@@ -1006,6 +1005,25 @@ describe('validatePointTable, server values', () => {
       expect(reasons(report)).toEqual([undefined])
       expect(report.points[0]?.resolved?.generator).toMatchObject({ ...raw, step: 1e-7 })
     })
+
+    // Raw 1.49e-7 rounds to 1e-7, so the first value written was 1 where 1.49
+    // was asked for. Raw 1.6e-7 on max is rounded inward with max to 1e-7.
+    it.each([
+      [1e7, { start: 1.49, step: 1, min: 0, max: 10 }, 1],
+      [2, { start: 3.2e-7, step: 2e-7, min: 0, max: 3.2e-7 }, 2e-7]
+    ])(
+      'names the resolution of a scaled double start that 7 raw decimals move, under %d with %j',
+      (scalingFactor, generator, resolution) => {
+        const report = resolve({
+          dataType: 'double',
+          scalingFactor,
+          generator: { mode: 'ramp', restart: false, ...generator }
+        })
+        expect(reasons(report)).toEqual([
+          `Ramp start: ${generator.start} is not a multiple of the resolution of ${resolution} this scaling gives a double`
+        ])
+      }
+    )
 
     it('refuses a scaled double ramp whose bounds hold no raw value at 7 decimals', () => {
       const report = resolve({
