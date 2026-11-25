@@ -85,8 +85,6 @@ export interface RampSpec {
   min: number
   max: number
   restart: boolean
-  /** True for float and double: bounds are compared with a tolerance. */
-  fractional: boolean
 }
 /** Where the ramp is: `stepCount` steps away from `start`. */
 export type RampTick =
@@ -96,23 +94,23 @@ export type RampTick =
 export const nextRampTick = (spec: RampSpec, stepCount: number): RampTick
 ```
 
-  `value` is `start + (stepCount + 1) * step` when that is inside the bounds, with a value inside the tolerance of a bound returned as the bound itself. Outside the bounds it is `{ kind: 'value', value: start, stepCount: 0 }` when `restart`, else `{ kind: 'hold' }`. The tolerance, for `fractional` only, is `1e-9 * Math.max(1, Math.abs(bound))`, the shape of `isWhole` in `src/shared/pointTable.ts`.
+  `value` is `start + (stepCount + 1) * step` when that is inside the bounds. It is computed and compared with the bounds in `BigInt`: each of `start`, `step`, `min` and `max` is read at the fewest decimals that write it back as itself and brought to the largest of those by a power of ten. Outside the bounds it is `{ kind: 'value', value: start, stepCount: 0 }` when `restart`, else `{ kind: 'hold' }`.
 
 - [ ] **Step 1: Write the failing tests.** A helper `run(spec, ticks)` folds `nextRampTick` from `stepCount` 0 and returns the values written, stopping at `hold`.
 
 ```ts
-const base = { start: 0, step: 1, min: 0, max: 3, restart: true, fractional: false }
+const base = { start: 0, step: 1, min: 0, max: 3, restart: true }
 expect(run(base, 5)).toEqual([1, 2, 3, 0, 1])
 expect(run({ ...base, start: 3, step: -1 }, 5)).toEqual([2, 1, 0, 3, 2])
 expect(run({ ...base, restart: false }, 5)).toEqual([1, 2, 3])
 expect(run({ ...base, step: 2 }, 3)).toEqual([2, 0, 2])                       // never 4
 expect(run({ ...base, start: 5, step: 100, min: 0, max: 10 }, 3)).toEqual([5, 5, 5])
 expect(run({ ...base, start: 3, restart: false }, 3)).toEqual([])            // start on the bound
-expect(run({ ...base, step: 0.1, max: 0.3, fractional: true }, 4)).toEqual([0.1, 0.2, 0.3, 0])
-expect(run({ ...base, start: 80, step: -0.1, min: 20, max: 80, fractional: true }, 600).at(-1)).toBe(20)
+expect(run({ ...base, step: 0.1, max: 0.3 }, 4)).toEqual([0.1, 0.2, 0.3, 0])
+expect(run({ ...base, start: 80, step: -0.1, min: 20, max: 80 }, 600).at(-1)).toBe(20)
 ```
 
-  `0.1 * 2` is `0.2` and `0.1 * 3` is `0.30000000000000004`, so the third value asserts the snap to the bound.
+  In a `Number`, `0.1 * 3` is `0.30000000000000004`, so the third value asserts that the decimal sum reaches the bound.
 
 - [ ] **Step 2: Run** `yarn test src/main/modules/modbusServer/__tests__/ramp.test.ts`. Expected: FAIL, module not found.
 - [ ] **Step 3: Implement `nextRampTick`.**
@@ -143,7 +141,7 @@ expect(run({ ...base, start: 80, step: -0.1, min: 20, max: 80, fractional: true 
   - in `modbusServer.test.ts`: `addRegister` with ramp params, then `syncServerRegisters` from the params it reports, serves 5 again
 
 - [ ] **Step 2: Run** `yarn test src/main/modules/modbusServer src/main/modules/__tests__/modbusServer.test.ts`. Expected: the new cases fail.
-- [ ] **Step 3: Implement.** In ramp mode the constructor writes `start`, and each tick calls `nextRampTick`; on `hold` it clears the interval. `fractional` is `dataType` being `float` or `double`. `_updateValue` stays synchronous.
+- [ ] **Step 3: Implement.** In ramp mode the constructor writes `start`, and each tick calls `nextRampTick`; on `hold` it clears the interval. `_updateValue` stays synchronous.
 - [ ] **Step 4: Run** the same command. Expected: PASS.
 - [ ] **Step 5: Commit** `feat: run ramp registers in the server`
 

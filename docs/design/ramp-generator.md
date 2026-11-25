@@ -75,7 +75,7 @@ owner 選 A，因為 Ramp 與隨機在這個程式裡該受的待遇相同：都
 1. 建構時寫入 `start`。
 2. 每個 `interval`，算下一個值 `start + n * step`，`n` 是自上次從 `start` 出發後走的步數。用步數算而不累加，浮點型別才不會漂移。
 3. 下一個值小於 `min` 或大於 `max` 時：`restart` 為真就寫入 `start` 並把 `n` 歸零；為假就不寫，並停掉 timer。
-4. `float` 與 `double` 的到界判定帶容差，容差內的值寫成界限本身。`3 * 0.1` 是 `0.30000000000000004`，不帶容差時 Max 0.3 永遠寫不到，設在界限上的告警門檻就不會觸發。容差的寫法照 `pointTable.ts` 的 `isWhole`。整數型別不需要，因為 `start` 與 `step` 都是整數。（這是我的決定。）
+4. 下一個值與到界判定都以 `BigInt` 精確計算：`start`、`step`、`min`、`max` 各自以能寫回自身的最少小數位讀成十進位，再乘十的冪次對齊到四者中最多的小數位。`3 * 0.1` 在 `Number` 裡是 `0.30000000000000004`，以 `Number` 判定時 Max 0.3 永遠寫不到，設在界限上的告警門檻就不會觸發；以十進位計算時它等於 0.3。越過界限的值，差距再小也不會寫成界限。int64 的 `n * step` 可達約 `2 ** 54`，超出安全整數範圍，同一套 `BigInt` 計算也讓它保持精確。
 5. `params` getter 回傳含 `mode`、`start`、`step`、`restart` 的參數，讓 `syncServerRegisters` 能重建。
 
 例：`uint32`、Start 0、Step 1、Max 為型別上限，是 kWh overflow 歸零。Start 80、Step -1、Min 20、Max 80，是溼度降到 20 後跳回 80。
