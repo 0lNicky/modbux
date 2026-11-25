@@ -100,8 +100,7 @@ export class ValueGenerator implements RegisterValueGenerator {
             step,
             min,
             max,
-            restart: restart ?? true,
-            fractional: dataType === 'float' || dataType === 'double'
+            restart: restart ?? true
           }
         : undefined
 

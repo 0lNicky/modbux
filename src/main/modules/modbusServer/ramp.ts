@@ -4,64 +4,51 @@ export interface RampSpec {
   min: number
   max: number
   restart: boolean
-  /** True for float and double: bounds are compared with a tolerance. */
-  fractional: boolean
 }
 
 /** Where the ramp is: `stepCount` steps away from `start`. */
 export type RampTick = { kind: 'value'; value: number; stepCount: number } | { kind: 'hold' }
 
 /**
- * How far a float value may miss `bound` and still be written as it.
- * `0.1 * 3` is `0.30000000000000004`, so without it a max of 0.3 is never
- * written.
- *
- * `start + n * step` lands within about `Number.EPSILON * (|start| + |bound|)`
- * of the exact sum when it lands near `bound`, and this takes 64 times that,
- * so it absorbs rounding and nothing a step could overshoot by. Under half a
- * step as well, because `start` is inside the bounds: a value that close to a
- * bound is then the step that reaches it, never a step leaving the bound it
- * stood on.
+ * The most decimals a ramp number is read with. A float or double ramp
+ * holds 7 (`RAMP_DECIMALS`); the rest is headroom.
  */
-const tolerance = (spec: RampSpec, bound: number): number =>
-  spec.fractional
-    ? Math.min(
-        64 * Number.EPSILON * (Math.abs(spec.start) + Math.abs(bound)),
-        Math.abs(spec.step) / 2
-      )
-    : 0
+const MAX_DECIMALS = 20
+
+/** The fewest decimals, up to `MAX_DECIMALS`, that write `value` back as itself. */
+const decimalsOf = (value: number): number => {
+  for (let decimals = 0; decimals < MAX_DECIMALS; decimals++) {
+    if (Number(value.toFixed(decimals)) === value) return decimals
+  }
+  return MAX_DECIMALS
+}
 
 /**
- * `start + count * step` on an integer ramp, worked in `BigInt` and compared
- * with the bounds there. An int64 step reaches about 2 ** 54, so the product
- * leaves the safe-integer range while the sum is back inside it.
+ * `value` times `10 ** decimals` as a `BigInt`. From 1e21 up `toFixed` writes
+ * an exponent, and every double that large is a whole number.
  */
-const nextIntegerTick = (spec: RampSpec, nextCount: number): RampTick => {
-  const value = BigInt(spec.start) + BigInt(nextCount) * BigInt(spec.step)
-  if (value >= BigInt(spec.min) && value <= BigInt(spec.max)) {
-    return { kind: 'value', value: Number(value), stepCount: nextCount }
-  }
-  return spec.restart ? { kind: 'value', value: spec.start, stepCount: 0 } : { kind: 'hold' }
-}
+const scaled = (value: number, decimals: number): bigint =>
+  Math.abs(value) < 1e21
+    ? BigInt(value.toFixed(decimals).replace('.', ''))
+    : BigInt(value) * 10n ** BigInt(decimals)
 
 /**
  * The tick after `stepCount`.
  *
  * The value is `start + n * step` rather than the last value plus `step`, so a
- * float ramp carries one rounding error rather than the sum of all of them.
+ * float ramp carries no sum of rounding errors. It is worked out and compared
+ * with the bounds in `BigInt`, on the decimals the four numbers are written
+ * with, so `0.1 * 3` reaches a max of 0.3 and an overshoot of any size holds.
+ * An int64 step reaches about 2 ** 54, where `n * step` in a `Number` leaves
+ * the safe-integer range.
  */
 export const nextRampTick = (spec: RampSpec, stepCount: number): RampTick => {
   const nextCount = stepCount + 1
-  if (!spec.fractional) return nextIntegerTick(spec, nextCount)
-  const value = spec.start + nextCount * spec.step
+  const decimals = Math.max(...[spec.start, spec.step, spec.min, spec.max].map(decimalsOf))
+  const value = scaled(spec.start, decimals) + BigInt(nextCount) * scaled(spec.step, decimals)
 
-  for (const bound of [spec.min, spec.max]) {
-    if (Math.abs(value - bound) <= tolerance(spec, bound)) {
-      return { kind: 'value', value: bound, stepCount: nextCount }
-    }
-  }
-  if (value >= spec.min && value <= spec.max) {
-    return { kind: 'value', value, stepCount: nextCount }
+  if (value >= scaled(spec.min, decimals) && value <= scaled(spec.max, decimals)) {
+    return { kind: 'value', value: Number(`${value}e-${decimals}`), stepCount: nextCount }
   }
   return spec.restart ? { kind: 'value', value: spec.start, stepCount: 0 } : { kind: 'hold' }
 }

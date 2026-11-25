@@ -14,7 +14,7 @@ const run = (spec: RampSpec, ticks: number): number[] => {
   return written
 }
 
-const base: RampSpec = { start: 0, step: 1, min: 0, max: 3, restart: true, fractional: false }
+const base: RampSpec = { start: 0, step: 1, min: 0, max: 3, restart: true }
 
 describe('nextRampTick', () => {
   it('climbs to max and returns to start', () => {
@@ -41,48 +41,58 @@ describe('nextRampTick', () => {
     expect(run({ ...base, start: 3, restart: false }, 3)).toEqual([])
   })
 
-  // 0.1 * 3 is 0.30000000000000004, so the third value is the snap to max.
+  // 0.1 * 3 is 0.30000000000000004 in a Number.
   it('writes a float bound that the step reaches only within rounding', () => {
-    expect(run({ ...base, step: 0.1, max: 0.3, fractional: true }, 4)).toEqual([0.1, 0.2, 0.3, 0])
+    expect(run({ ...base, step: 0.1, max: 0.3 }, 4)).toEqual([0.1, 0.2, 0.3, 0])
   })
 
-  // The tolerance was 1e-9 at the least, wider than this whole range, and min
-  // was matched first, so the first three ticks all wrote 0.
-  it('moves a float step finer than the tolerance, and snaps only to the bound it walks toward', () => {
-    const spec = { ...base, step: 1e-10, max: 5e-10, fractional: true }
+  it('moves a float step finer than 1e-9, and writes the bound it walks toward', () => {
+    const spec = { ...base, step: 1e-10, max: 5e-10 }
     const written = run(spec, 6)
     expect(written.slice(0, 4).map((value) => Math.round(value * 1e10))).toEqual([1, 2, 3, 4])
     expect(written.slice(4)).toEqual([5e-10, 0])
   })
 
-  it('moves a falling float step finer than the tolerance, and snaps it to min', () => {
-    const spec = { ...base, start: 5e-10, step: -1e-10, min: 0, max: 5e-10, fractional: true }
+  it('moves a falling float step finer than 1e-9, and writes min', () => {
+    const spec = { ...base, start: 5e-10, step: -1e-10, min: 0, max: 5e-10 }
     const written = run(spec, 6)
     expect(written.slice(0, 4).map((value) => Math.round(value * 1e10))).toEqual([4, 3, 2, 1])
     expect(written.slice(4)).toEqual([0, 5e-10])
   })
 
-  // 10 - 1e-10 is within 1e-9 * 10 of max, so the first step down wrote 10.
-  it('does not snap a falling float ramp back to the max it leaves', () => {
-    const spec = { ...base, start: 10, step: -1e-10, min: 0, max: 10, fractional: true }
+  it('does not write a falling float ramp back as the max it leaves', () => {
+    const spec = { ...base, start: 10, step: -1e-10, min: 0, max: 10 }
     expect(nextRampTick(spec, 0)).toEqual({ kind: 'value', value: 10 - 1e-10, stepCount: 1 })
   })
 
-  // 10 + 1e-10 is within 1e-9 * 10 of max, so it was written as 10 and the
-  // ramp went on ticking until the distance outgrew the tolerance.
   it('holds at once when the first float step leaves the bounds, however small', () => {
-    const spec = { ...base, start: 10, step: 1e-10, max: 10, restart: false, fractional: true }
+    const spec = { ...base, start: 10, step: 1e-10, max: 10, restart: false }
     expect(nextRampTick(spec, 0)).toEqual({ kind: 'hold' })
   })
 
-  // `1e-9 * |bound|` is 0.1 at 1e8, so a tolerance that grows with the bound
-  // alone wrote these overshoots as max.
   it.each([
     [1e8, 0.1, 1e8 + 0.05],
     [1e8, 0.1, 1e8 + 0.06],
     [1e9, 1, 1e9 + 0.5]
   ])('holds when a float step from %d by %d overshoots a max of %d', (start, step, max) => {
-    const spec = { start, step, min: start, max, restart: false, fractional: true }
+    const spec = { start, step, min: start, max, restart: false }
+    expect(nextRampTick(spec, 0)).toEqual({ kind: 'hold' })
+  })
+
+  it('holds when a double step overshoots a max near 1e12 by 0.01', () => {
+    const spec = {
+      start: 1e12,
+      step: 1,
+      min: 1e12,
+      max: 1e12 + 0.99,
+      restart: false
+    }
+    expect(nextRampTick(spec, 0)).toEqual({ kind: 'hold' })
+  })
+
+  // 1e12 + 0.00001 rounds back to 1e12, which is max.
+  it('holds when a double step too fine for the start leaves the max the start sits on', () => {
+    const spec = { start: 1e12, step: 0.00001, min: 0, max: 1e12, restart: false }
     expect(nextRampTick(spec, 0)).toEqual({ kind: 'hold' })
   })
 
@@ -93,8 +103,7 @@ describe('nextRampTick', () => {
       start: 12345.6,
       step: 0.1,
       min: 12345.6,
-      max: 12345.8,
-      fractional: true
+      max: 12345.8
     }
     expect(run(spec, 3)).toEqual([12345.7, 12345.8, 12345.6])
   })
@@ -114,7 +123,7 @@ describe('nextRampTick', () => {
   })
 
   it('reaches min after 600 float steps down', () => {
-    const spec = { ...base, start: 80, step: -0.1, min: 20, max: 80, fractional: true }
+    const spec = { ...base, start: 80, step: -0.1, min: 20, max: 80 }
     expect(run(spec, 600).at(-1)).toBe(20)
   })
 })

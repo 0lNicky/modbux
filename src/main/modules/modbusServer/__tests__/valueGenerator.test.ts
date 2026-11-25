@@ -465,8 +465,7 @@ describe('ValueGenerator', () => {
       gen.dispose()
     })
 
-    // 0.1 * 3 is 0.30000000000000004, past a max of 0.3, so without the snap
-    // the third tick restarts and 0.3 never reaches the register.
+    // 0.1 * 3 is 0.30000000000000004 in a Number, past a max of 0.3.
     it('writes a float max that the step reaches only within rounding, then restarts', () => {
       const serverData = createServerData()
       const gen = ramp(serverData, { dataType: 'float', start: 0, step: 0.1, min: 0, max: 0.3 })
