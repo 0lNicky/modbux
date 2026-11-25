@@ -119,7 +119,15 @@ export function launchOptions(userDataDir?: string): LaunchOptions {
 
   // ELECTRON_ENABLE_LOGGING sends Chromium's own logging to stderr, which the
   // fixture keeps: without it the app says nothing on its way out.
-  const env = { ...process.env, ELECTRON_ENABLE_LOGGING: '1' }
+  //
+  // E2E_BACKGROUND=1 keeps the app invisible and off the keyboard focus, so
+  // the suite does not take over the desktop it runs on. Set E2E_BACKGROUND=0
+  // to watch it.
+  const env = {
+    ...process.env,
+    ELECTRON_ENABLE_LOGGING: '1',
+    E2E_BACKGROUND: process.env.E2E_BACKGROUND ?? '1'
+  }
 
   if (!isPackaged) return { args: [join(ROOT, 'out/main/index.js'), ...args], env }
 
