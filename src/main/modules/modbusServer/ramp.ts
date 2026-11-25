@@ -32,6 +32,19 @@ const tolerance = (spec: RampSpec, bound: number): number =>
     : 0
 
 /**
+ * `start + count * step` on an integer ramp, worked in `BigInt` and compared
+ * with the bounds there. An int64 step reaches about 2 ** 54, so the product
+ * leaves the safe-integer range while the sum is back inside it.
+ */
+const nextIntegerTick = (spec: RampSpec, nextCount: number): RampTick => {
+  const value = BigInt(spec.start) + BigInt(nextCount) * BigInt(spec.step)
+  if (value >= BigInt(spec.min) && value <= BigInt(spec.max)) {
+    return { kind: 'value', value: Number(value), stepCount: nextCount }
+  }
+  return spec.restart ? { kind: 'value', value: spec.start, stepCount: 0 } : { kind: 'hold' }
+}
+
+/**
  * The tick after `stepCount`.
  *
  * The value is `start + n * step` rather than the last value plus `step`, so a
@@ -39,6 +52,7 @@ const tolerance = (spec: RampSpec, bound: number): number =>
  */
 export const nextRampTick = (spec: RampSpec, stepCount: number): RampTick => {
   const nextCount = stepCount + 1
+  if (!spec.fractional) return nextIntegerTick(spec, nextCount)
   const value = spec.start + nextCount * spec.step
 
   for (const bound of [spec.min, spec.max]) {

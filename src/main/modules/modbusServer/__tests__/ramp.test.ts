@@ -99,6 +99,20 @@ describe('nextRampTick', () => {
     expect(run(spec, 3)).toEqual([12345.7, 12345.8, 12345.6])
   })
 
+  // The third product, 3 * 4503599627370497, is past 2 ** 53, so it rounded
+  // and the sum came out 1 high.
+  it('writes an int64 ramp exactly where n * step leaves the safe-integer range', () => {
+    const spec = {
+      ...base,
+      start: -Number.MAX_SAFE_INTEGER,
+      step: 4503599627370497,
+      min: -Number.MAX_SAFE_INTEGER,
+      max: Number.MAX_SAFE_INTEGER,
+      restart: false
+    }
+    expect(run(spec, 4)).toEqual([-4503599627370494, 3, 4503599627370500])
+  })
+
   it('reaches min after 600 float steps down', () => {
     const spec = { ...base, start: 80, step: -0.1, min: 20, max: 80, fractional: true }
     expect(run(spec, 600).at(-1)).toBe(20)
