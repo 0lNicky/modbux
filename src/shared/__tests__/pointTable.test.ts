@@ -1012,6 +1012,34 @@ describe('validatePointTable, server values', () => {
       ])
     })
 
+    // Raw 1.49e-7 rounds to 1e-7 at 7 decimals, so the register stepped by 1
+    // engineering unit where 1.49 was asked for.
+    it.each(['float', 'double'] as const)(
+      'names the resolution of a scaled %s step that 7 raw decimals cannot hold',
+      (dataType) => {
+        const report = resolve({
+          dataType,
+          scalingFactor: 1e7,
+          generator: { mode: 'ramp', start: 0, step: 1.49, min: 0, max: 4.47, restart: false }
+        })
+        expect(reasons(report)).toEqual([
+          `Ramp step: 1.49 is not a multiple of the resolution of 1 this scaling gives a ${dataType}`
+        ])
+      }
+    )
+
+    // 0.1 / 0.3 is 0.33333333333333337, which 7 decimals move by about 1e-7
+    // of itself.
+    it('accepts a scaled double step whose raw value 7 decimals round by a part in 1e7', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 0.3,
+        generator: { mode: 'ramp', start: 0, step: 0.1, min: 0, max: 3 }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator?.step).toBe(0.3333333)
+    })
+
     it('answers a scaled float step of 0 with the step being 0', () => {
       const report = resolve({
         dataType: 'float',

@@ -508,6 +508,9 @@ const pointDataType = (
   return { ok: true, dataType: parsed.data }
 }
 
+/** The most a float or double ramp step may move, as a part of itself, when rounded to raw decimals. */
+const RAMP_STEP_ROUNDING = 1e-6
+
 /** A ramp in raw values: the bounds lowest first, and the step as the raw distance it covers. */
 const rampGenerator = (
   generator: PointGenerator,
@@ -530,15 +533,25 @@ const rampGenerator = (
   // schema refuses it. An unscaled one is the number given, and the schema
   // refuses it if it has more.
   const toRaw = (raw: number): number => (whole || !scales(scaling) ? raw : toRampDecimals(raw))
+  const exactStep = unscaleDistance(step, scaling)
   const rawStep = whole
     ? wholeRampStep(step, dataType, scaling)
-    : { ok: true as const, raw: toRaw(unscaleDistance(step, scaling)) }
+    : { ok: true as const, raw: toRaw(exactStep) }
   if (!rawStep.ok) return rawStep
-  // `wholeRampStep` answers this for an integer type; here `toRaw` has
-  // rounded a float or double step finer than 7 raw decimals to 0.
+  // `wholeRampStep` answers these for an integer type; here `toRaw` has
+  // rounded a float or double step to 7 raw decimals. A step it moves by more
+  // than `RAMP_STEP_ROUNDING` of itself is a different step on the wire:
+  // under a factor of 1e7, 1.49 became 1. 0.1 under a factor of 0.3 is raw
+  // 0.33333333333333337 and moves by about 1e-7 of itself.
+  const resolution = resolutionOf(scaling) / 10 ** RAMP_DECIMALS
   if (step !== 0 && rawStep.raw === 0) {
     return reject(
-      `Ramp step: ${step} is smaller than the resolution of ${resolutionOf(scaling) / 10 ** RAMP_DECIMALS} this scaling gives a ${dataType}`
+      `Ramp step: ${step} is smaller than the resolution of ${resolution} this scaling gives a ${dataType}`
+    )
+  }
+  if (!whole && Math.abs(rawStep.raw - exactStep) > RAMP_STEP_ROUNDING * Math.abs(exactStep)) {
+    return reject(
+      `Ramp step: ${step} is not a multiple of the resolution of ${resolution} this scaling gives a ${dataType}`
     )
   }
   if (rawStep.raw === 0) return reject('The ramp step is 0 after scaling')

@@ -638,6 +638,43 @@ describe('server_apply_point_table', () => {
     })
   })
 
+  it('refuses a scaled double ramp step that 7 raw decimals cannot hold, naming the resolution', async () => {
+    const context = serverContext()
+    const client = await connectInMemory(context)
+
+    const result = await client.callTool({
+      name: 'server_apply_point_table',
+      arguments: {
+        port: 503,
+        points: [
+          {
+            name: 'Energy',
+            address: 0,
+            registerType: 'holding_registers',
+            dataType: 'double',
+            scalingFactor: 1e7,
+            generator: { mode: 'ramp', start: 0, step: 1.49, min: 0, max: 4.47, restart: false }
+          }
+        ]
+      }
+    })
+
+    expect(commandNames(context)).toEqual(['server_list'])
+    expect(jsonOf(result)).toMatchObject({
+      report: {
+        accepted: 0,
+        rejected: 1,
+        points: [
+          {
+            status: 'rejected',
+            reason:
+              'Ramp step: 1.49 is not a multiple of the resolution of 1 this scaling gives a double'
+          }
+        ]
+      }
+    })
+  })
+
   it("sends the accepted points to the unit the server shows, in the table's byte order", async () => {
     const context = serverContext({
       server_apply_point_table: async () => ({ ...SIM_VALUES, byteOrder: 'CDAB' })
