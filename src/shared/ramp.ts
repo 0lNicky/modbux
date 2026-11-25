@@ -38,6 +38,12 @@ const scaled = (value: number, decimals: number): bigint => {
   return digits * 10n ** BigInt(decimals - own)
 }
 
+/** Tick `count` of a ramp from `start` by `step`, the value `nextRampTick` writes for it. */
+export const rampTickValue = (start: number, step: number, count: number): number => {
+  const decimals = Math.max(decimalsOf(start), decimalsOf(step))
+  return Number(`${scaled(start, decimals) + BigInt(count) * scaled(step, decimals)}e-${decimals}`)
+}
+
 /**
  * The tick after `stepCount`.
  *

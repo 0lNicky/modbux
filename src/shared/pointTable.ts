@@ -32,6 +32,7 @@ import {
   toRampDecimals
 } from './encoding'
 import { emptyRegisterMapping } from './default'
+import { nextRampTick, rampTickValue } from './ramp'
 
 //
 //
@@ -139,13 +140,13 @@ export const PointGeneratorSchema = z.object({
     .number()
     .optional()
     .describe(
-      'A ramp: the value it starts at and returns to, in engineering units. On float and double under a scaling, its raw value is rounded to 7 decimals and refused if that moves it by more than a millionth of itself'
+      'A ramp: the value it starts at and returns to, in engineering units. On float and double under a scaling, its raw value is rounded to 7 decimals and refused if that moves it by more than a tenth of a step'
     ),
   step: z
     .number()
     .optional()
     .describe(
-      'A ramp: what each interval adds, in engineering units; negative counts down. Not 0. On an integer type the raw step is whole after scaling. On float and double the raw step holds 7 raw decimals: unscaled it has no more, and scaled it is rounded to them and refused if that moves it by more than a millionth of itself'
+      'A ramp: what each interval adds, in engineering units; negative counts down. Not 0. On an integer type the raw step is whole after scaling. On float and double the raw step holds 7 raw decimals: unscaled it has no more, and scaled it is rounded to them, and the ramp is refused if that takes its last tick inside min and max more than a tenth of a step from the values asked for'
     ),
   restart: z
     .boolean()
@@ -544,10 +545,64 @@ const pointDataType = (
 }
 
 /**
- * The most a float or double ramp's step or start may move, as a part of
- * itself, when rounded to raw decimals.
+ * The part of a step a scaled float or double ramp may miss the values asked
+ * for by, at its first tick and at its last. Its error grows linearly from one
+ * to the other, so the two bound every tick between, and a restart returns to
+ * the first. Well under a half, where the number of steps changes.
  */
-const RAMP_ROUNDING = 1e-6
+const RAMP_TICK_ERROR = 0.1
+
+/**
+ * The raw bounds under which a scaled float or double ramp writes the
+ * engineering values `start + k * step` for k from 0 to n, the last k inside
+ * min to max, or why 7 raw decimals cannot hold that sequence.
+ *
+ * The bound the ramp walks toward admits tick n, because a step rounded up
+ * carries tick n past that bound rounded alone: raw 0.1666667 three times is
+ * 0.5000001, beside a max of 0.3 under a factor of 0.6 at raw 0.5.
+ */
+const fitRampSequence = (
+  { start, step, min, max }: { start: number; step: number; min: number; max: number },
+  raw: { start: number; step: number; low: number; high: number },
+  scaling: PointScaling,
+  describeResolution: string
+): { ok: true; low: number; high: number } | { ok: false; reason: string } => {
+  const allowed = RAMP_TICK_ERROR * Math.abs(step)
+  const startError = Math.abs(rescale(raw.start, scaling) - start)
+  if (startError > allowed) {
+    return reject(`Ramp start: ${start} is not a multiple of ${describeResolution}`)
+  }
+  const target = step > 0 ? Math.max(min, max) : Math.min(min, max)
+  // 0.3 / 0.1 is 2.9999999999999996, which is 3 steps.
+  const quotient = (target - start) / step
+  const count = Math.max(0, Math.floor(quotient + 1e-9 * Math.max(1, Math.abs(quotient))))
+  const endsWithin = (ticks: number): boolean =>
+    Math.abs(
+      rescale(rampTickValue(raw.start, raw.step, ticks), scaling) - (start + ticks * step)
+    ) <= allowed
+  if (!endsWithin(count)) {
+    // The error grows by `stepError` a tick. Float error can put the
+    // estimate one tick past the last one within `allowed`.
+    const stepError = Math.abs(rescale(raw.step, scaling) - rescale(0, scaling) - step)
+    const estimate = Math.floor((allowed - startError) / stepError)
+    const held = endsWithin(estimate) ? estimate : estimate - 1
+    return reject(
+      `Ramp step: ${step} is not a multiple of ${describeResolution}, which keeps a ramp within a tenth of a step for ${held} steps, and this one asks for ${count}`
+    )
+  }
+  const last = rampTickValue(raw.start, raw.step, count)
+  const bounds =
+    raw.step > 0
+      ? { low: raw.low, high: Math.max(raw.high, last) }
+      : { low: Math.min(raw.low, last), high: raw.high }
+  const spec = { start: raw.start, step: raw.step, min: bounds.low, max: bounds.high }
+  if (nextRampTick({ ...spec, restart: false }, count).kind !== 'hold') {
+    return reject(
+      `Ramp step: ${step} reaches ${target} in ${count} steps, and at ${describeResolution} the raw ramp takes another`
+    )
+  }
+  return { ok: true, ...bounds }
+}
 
 /** A ramp in raw values: the bounds lowest first, and the step as the raw distance it covers. */
 const rampGenerator = (
@@ -571,26 +626,15 @@ const rampGenerator = (
   // schema refuses it. An unscaled one is the number given, and the schema
   // refuses it if it has more.
   const toRaw = (raw: number): number => (whole || !scales(scaling) ? raw : toRampDecimals(raw))
-  const exactStep = unscaleDistance(step, scaling)
   const rawStep = whole
     ? wholeRampStep(step, dataType, scaling)
-    : { ok: true as const, raw: toRaw(exactStep) }
+    : { ok: true as const, raw: toRaw(unscaleDistance(step, scaling)) }
   if (!rawStep.ok) return rawStep
-  // `wholeRampStep` answers these for an integer type; here `toRaw` has
-  // rounded a float or double step to 7 raw decimals. A step it moves by more
-  // than `RAMP_ROUNDING` of itself is a different step on the wire:
-  // under a factor of 1e7, 1.49 became 1. 0.1 under a factor of 0.3 is raw
-  // 0.33333333333333337 and moves by about 1e-7 of itself.
-  const resolution = resolutionOf(scaling) / 10 ** RAMP_DECIMALS
+  // `wholeRampStep` answers this for an integer type; here `toRaw` has
+  // rounded a float or double step finer than 7 raw decimals to 0.
+  const resolution = `the resolution of ${resolutionOf(scaling) / 10 ** RAMP_DECIMALS} this scaling gives a ${dataType}`
   if (step !== 0 && rawStep.raw === 0) {
-    return reject(
-      `Ramp step: ${step} is smaller than the resolution of ${resolution} this scaling gives a ${dataType}`
-    )
-  }
-  if (!whole && Math.abs(rawStep.raw - exactStep) > RAMP_ROUNDING * Math.abs(exactStep)) {
-    return reject(
-      `Ramp step: ${step} is not a multiple of the resolution of ${resolution} this scaling gives a ${dataType}`
-    )
+    return reject(`Ramp step: ${step} is smaller than ${resolution}`)
   }
   if (rawStep.raw === 0) return reject('The ramp step is 0 after scaling')
   const rawMin = engineeringToRaw(min, dataType, scaling)
@@ -623,9 +667,9 @@ const rampGenerator = (
   // scales back inside min to max up to `rescaleError`, as raw 0.87 does for a
   // max of 8.7 under a factor of 10 though 8.7 / 10 is 0.8699999999999999.
   // Past that it is outside, and min goes up a unit or max down one: raw
-  // 1.6e-7 rounds to 2e-7, which is 4e-7 under a factor of 2. Every raw value
-  // written lies between the two, and `rescale` is monotonic, so none scales
-  // further outside min to max than `rescaleError`.
+  // 1.6e-7 rounds to 2e-7, which is 4e-7 under a factor of 2.
+  // `fitRampSequence` can then widen the bound the ramp walks toward to its
+  // last tick.
   const unit = 1 / 10 ** RAMP_DECIMALS
   const error = rescaleError(Math.max(Math.abs(min), Math.abs(max)), scaling)
   const reachesInside = (raw: number): boolean => {
@@ -639,20 +683,22 @@ const rampGenerator = (
       `Ramp min ${min} and max ${max} hold no raw value at ${RAMP_DECIMALS} decimals under this scaling`
     )
   }
-  // The start written is the rounded start held between the rounded bounds,
-  // and it is refused on the step's rule: a start of 1.49 under a factor of
-  // 1e7 was written as 1.
   const rawStartWritten = Math.min(Math.max(toRaw(rawStart.raw), rawLow), rawHigh)
-  if (Math.abs(rawStartWritten - rawStart.raw) > RAMP_ROUNDING * Math.abs(rawStart.raw)) {
-    return reject(
-      `Ramp start: ${start} is not a multiple of the resolution of ${resolution} this scaling gives a ${dataType}`
-    )
-  }
+  const fitted =
+    whole || !scales(scaling)
+      ? { ok: true as const, low: rawLow, high: rawHigh }
+      : fitRampSequence(
+          { start, step, min, max },
+          { start: rawStartWritten, step: rawStep.raw, low: rawLow, high: rawHigh },
+          scaling,
+          resolution
+        )
+  if (!fitted.ok) return fitted
   return {
     ok: true,
     generator: {
-      min: rawLow,
-      max: rawHigh,
+      min: fitted.low,
+      max: fitted.high,
       intervalMs,
       mode: 'ramp',
       start: rawStartWritten,

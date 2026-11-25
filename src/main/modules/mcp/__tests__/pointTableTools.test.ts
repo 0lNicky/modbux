@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 // The point table tools as an MCP client sees them, over the SDK's in-memory
 // transport, with the client and the renderer commands stood in for.
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   byteOrderFlags,
   createRegisters,
@@ -11,6 +11,8 @@ import {
   ServerValues
 } from '@shared'
 import { WRITES_NOT_ALLOWED } from '../registry'
+import { ValueGenerator } from '../../modbusServer/valueGenerator'
+import type { Windows } from '../../../windows'
 import { CommandAnswers, connectInMemory, fakeContext, jsonOf, textOf } from './fakeContext'
 
 const SERVERS: ServerList = {
@@ -668,7 +670,7 @@ describe('server_apply_point_table', () => {
           {
             status: 'rejected',
             reason:
-              'Ramp step: 1.49 is not a multiple of the resolution of 1 this scaling gives a double'
+              'Ramp step: 1.49 is not a multiple of the resolution of 1 this scaling gives a double, which keeps a ramp within a tenth of a step for 0 steps, and this one asks for 3'
           }
         ]
       }
@@ -731,6 +733,92 @@ describe('server_apply_point_table', () => {
       step: 0.29,
       min: 0,
       max: 0.87
+    })
+  })
+
+  describe('a ramp the server then runs', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    // Raw step 0.1666667 three times is 0.5000001, past a raw max of 0.5
+    // rounded alone, so the register held 0.2 where 0.3 was asked for.
+    it('holds 0, 0.1, 0.2 and 0.3 on a double ramp under a factor of 0.6, then holds', async () => {
+      const context = serverContext({ server_apply_point_table: async () => SIM_VALUES })
+      const client = await connectInMemory(context)
+
+      await client.callTool({
+        name: 'server_apply_point_table',
+        arguments: {
+          uuid: 'sim',
+          points: [
+            {
+              name: 'Level',
+              address: 0,
+              registerType: 'holding_registers',
+              dataType: 'double',
+              scalingFactor: 0.6,
+              generator: { mode: 'ramp', start: 0, step: 0.1, min: 0, max: 0.3, restart: false }
+            }
+          ]
+        }
+      })
+
+      const payload = sentPayload(context, 'server_apply_point_table') as {
+        units: Record<string, { holding_registers: Record<string, { params: unknown }> }>
+      }
+      const [unit] = Object.values(payload.units)
+      const params = unit?.holding_registers[0]?.params as {
+        min: number
+        max: number
+        interval: number
+        start: number
+        step: number
+        restart: boolean
+      }
+
+      vi.useFakeTimers()
+      const serverData = {
+        coils: new Map(),
+        discrete_inputs: new Map(),
+        input_registers: new Map(),
+        holding_registers: new Map<number, number>()
+      }
+      const generator = new ValueGenerator({
+        uuid: 'sim',
+        unitId: '1',
+        windows: { send: vi.fn() } as unknown as Windows,
+        serverData,
+        order: byteOrderFlags('ABCD'),
+        address: 0,
+        registerType: 'holding_registers',
+        dataType: 'double',
+        comment: '',
+        mode: 'ramp',
+        min: params.min,
+        max: params.max,
+        interval: params.interval,
+        start: params.start,
+        step: params.step,
+        restart: params.restart
+      })
+
+      /** The register's double, ABCD, in engineering units. */
+      const engineeringAt0 = (): number => {
+        const bytes = Buffer.alloc(8)
+        for (let word = 0; word < 4; word++) {
+          bytes.writeUInt16BE(serverData.holding_registers.get(word) ?? 0, 2 * word)
+        }
+        return Number((bytes.readDoubleBE(0) * 0.6).toFixed(6))
+      }
+      const seen = [engineeringAt0()]
+      for (let tick = 0; tick < 4; tick++) {
+        vi.advanceTimersByTime(params.interval)
+        seen.push(engineeringAt0())
+      }
+      generator.dispose()
+
+      expect(seen).toEqual([0, 0.1, 0.2, 0.3, 0.3])
     })
   })
 
