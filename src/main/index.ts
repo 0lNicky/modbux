@@ -11,6 +11,7 @@ import { Windows } from './windows'
 import { RendererCommands } from './modules/rendererCommands'
 import { McpService } from './modules/mcp/mcpService'
 import { createFileSettingsStore, MCP_SETTINGS_FILE } from './modules/mcp/settings'
+import { presentWindow, runsInBackground } from './modules/presentWindow'
 
 if (is.dev && os.platform() === 'darwin') {
   app.disableHardwareAcceleration()
@@ -117,7 +118,7 @@ function createWindow(): BrowserWindow {
   windows.main = mainWindow
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    presentWindow(mainWindow)
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -166,6 +167,7 @@ onIpcEvent('open_server_window', () => {
     minWidth: 820,
     minHeight: 800,
     autoHideMenuBar: true,
+    show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -176,6 +178,9 @@ onIpcEvent('open_server_window', () => {
     title: 'Server',
     backgroundColor: '#181818'
   })
+
+  const serverWindow = windows.server
+  serverWindow.once('ready-to-show', () => presentWindow(serverWindow))
 
   // The handler the main window has. Nothing in the server view opens a link
   // today, and a window without one answers `window.open` with a Modbux window
@@ -228,10 +233,13 @@ const installReactDevtools = async (): Promise<void> => {
 }
 
 app.whenReady().then(async () => {
+  // `presentWindow` hides windows; the Dock icon belongs to the app.
+  if (runsInBackground) app.dock?.hide()
+
   await installReactDevtools()
 
   if (os.platform() !== 'darwin') {
-    splash = new BrowserWindow({
+    const splashWindow = new BrowserWindow({
       width: 400,
       height: 300,
       frame: false,
@@ -248,11 +256,10 @@ app.whenReady().then(async () => {
       }
     })
 
-    splash.loadFile(join(__dirname, '../../resources/splash.html')).catch(console.error)
+    splash = splashWindow
+    splashWindow.loadFile(join(__dirname, '../../resources/splash.html')).catch(console.error)
 
-    splash.on('ready-to-show', () => {
-      splash?.show()
-    })
+    splashWindow.on('ready-to-show', () => presentWindow(splashWindow))
   }
 
   // Set app user model id for windows
