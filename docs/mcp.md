@@ -43,7 +43,7 @@ claude mcp add --transport http modbux http://127.0.0.1:15502/mcp --header "Auth
 前三個 Prompt 皆只有一個必填參數 `pointTable`：點位表文字（直接從規格書複製貼上的列、CSV 或 Markdown 表格皆可）。
 
 - `point_table_to_client`：先讀取 `client_get_config`，必要時呼叫 `client_set_connection` 設定連線；接著執行 `client_apply_point_table` 進行 `dryRun: true` 試跑驗證並修正被拒絕的點位，再正式套用，最後執行 `client_connect` 與 `client_read_points`。依數值合理性檢查字組順序（word order）與縮放比例；若數值不合理，則依 `modbux://encoding` 嘗試其他位元組順序。
-- `point_table_to_simulator`：透過 `server_list` / `server_create` 建立 Server，呼叫 `server_apply_point_table` 先進行 `dryRun` 再正式套用，為每個點位設定固定值或產生器範圍，最後以 `server_get_values` 確認結果。
+- `point_table_to_simulator`：透過 `server_list` / `server_create` 建立 Server，呼叫 `server_apply_point_table` 先進行 `dryRun` 再正式套用，為每個點位設定固定值、隨機產生器範圍，或對電度這類累加量設定 Ramp（`generator: { mode: 'ramp', start, step, min, max, intervalSeconds, restart }`，每個間隔加一個有號步進，越過 Min 或 Max 後回到 Start，`restart` 為 false 時停住），最後以 `server_get_values` 確認結果。
 - `closed_loop_test`：依點位表建立 Server，將 Client 指向 `127.0.0.1` 與該 Server 的連接埠並套用同一份點位表，讀取後逐點與 `server_get_values` 比對並回報不一致的點位。通過僅代表兩端設定一致，不代表點位表與真實裝置相符。
 - `simulate_device_fault`：必填參數 `situation`，以文字說明欲模擬的設備故障情境。Prompt 會引導以 `server_set_faults` 規則組合離線、忙碌、拒絕寫入與回應延遲，以 `server_drop_connections` 模擬斷線，並以 `server_set_values` 設定數值凍結、無效值哨兵（`0xFFFF`、`0x8000`、float 的 `NaN`）、超量程與累計值回捲，最後透過 `server_get_requests` 與 `server_get_faults` 驗證故障確實觸發。
 

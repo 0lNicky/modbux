@@ -9,6 +9,7 @@ import { FixedOrGenerator, ValueParameters } from './valueParameters'
 import { AddressField, DataTypeSelect, CommentField } from './registerFields'
 import { AddButtons, DeleteButton } from './addRegisterActions'
 import { FIELD_DEFAULTS, inTimestampWindow, isTimestampType } from './addRegister.zustand.helpers'
+import { formatRampValue } from '@shared'
 
 const AddRegister = meme(() => {
   const edit = useAddRegisterZustand((z) => z.serverRegisterEdit !== undefined)
@@ -45,7 +46,11 @@ const AddRegister = meme(() => {
       min,
       value,
       stringValue,
-      length
+      length,
+      mode,
+      start,
+      step,
+      restart
     } = addRegisterZustand.serverRegisterEdit.params
 
     // The masked setters take the validity of what they are given as a second
@@ -68,8 +73,20 @@ const AddRegister = meme(() => {
       interval ? String(interval / 1000) : FIELD_DEFAULTS.interval,
       true
     )
-    addRegisterZustand.setMax(max === undefined ? FIELD_DEFAULTS.max : String(max), true)
-    addRegisterZustand.setMin(min === undefined ? FIELD_DEFAULTS.min : String(min), true)
+    // A ramp's numbers are written without an exponent, which the masks read
+    // as digits. A random generator's are written as before.
+    const format = mode === 'ramp' ? formatRampValue : String
+    addRegisterZustand.setMax(max === undefined ? FIELD_DEFAULTS.max : format(max), true)
+    addRegisterZustand.setMin(min === undefined ? FIELD_DEFAULTS.min : format(min), true)
+    // After `setDataType`, which moves a timestamp off ramp. A register with no
+    // ramp of its own gets the defaults, so switching to Ramp lands on them.
+    addRegisterZustand.setGeneratorMode(mode ?? 'random')
+    addRegisterZustand.setStart(start === undefined ? FIELD_DEFAULTS.start : format(start), true)
+    addRegisterZustand.setStep(
+      step === undefined ? FIELD_DEFAULTS.step : formatRampValue(step),
+      true
+    )
+    addRegisterZustand.setRestart(restart ?? true)
 
     if (dataType === 'utf8') {
       addRegisterZustand.setStringValue(stringValue ?? '')

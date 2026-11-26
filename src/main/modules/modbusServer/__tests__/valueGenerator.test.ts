@@ -383,6 +383,199 @@ describe('ValueGenerator', () => {
       gen.dispose()
     })
   })
+  describe('ramp', () => {
+    type Params = ConstructorParameters<typeof ValueGenerator>[0]
+
+    /** A `uint16` holding ramp at interval 1000, from 5 by 1 within 0 to 7. */
+    const ramp = (serverData: ServerData, overrides: Partial<Params> = {}): ValueGenerator =>
+      new ValueGenerator({
+        uuid: 'test-uuid',
+        unitId: '1' as UnitIdString,
+        windows: createMockWindows(),
+        serverData,
+        registerType: 'holding_registers',
+        address: 0,
+        dataType: 'uint16',
+        min: 0,
+        max: 7,
+        order: ABCD,
+        interval: 1000,
+        comment: '',
+        mode: 'ramp',
+        start: 5,
+        step: 1,
+        restart: true,
+        ...overrides
+      })
+
+    it('writes start, then steps and returns to start past max', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData)
+
+      const seen = [wordAt(serverData, 0)]
+      for (let i = 0; i < 3; i++) {
+        vi.advanceTimersByTime(1000)
+        seen.push(wordAt(serverData, 0))
+      }
+      expect(seen).toEqual([5, 6, 7, 5])
+
+      gen.dispose()
+    })
+
+    it('holds the last value and stops its timer when restart is off', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData, { restart: false })
+
+      const seen = [wordAt(serverData, 0)]
+      for (let i = 0; i < 5; i++) {
+        vi.advanceTimersByTime(1000)
+        seen.push(wordAt(serverData, 0))
+      }
+      expect(seen).toEqual([5, 6, 7, 7, 7, 7])
+      expect(vi.getTimerCount()).toBe(0)
+
+      gen.dispose()
+    })
+
+    // The word reads 7 whether the hold tick writes nothing or writes 7 again,
+    // so the writes are read off what the server view is sent.
+    it('writes a start on the bound once and stops after one tick', () => {
+      const serverData = createServerData()
+      const windows = createMockWindows()
+      const gen = ramp(serverData, { start: 7, restart: false, windows })
+
+      expect(wordAt(serverData, 0)).toBe(7)
+      vi.advanceTimersByTime(1000)
+      expect(wordAt(serverData, 0)).toBe(7)
+      expect(vi.getTimerCount()).toBe(0)
+      expect(vi.mocked(windows.send).mock.calls).toEqual([
+        [
+          'register_value',
+          {
+            uuid: 'test-uuid',
+            unitId: '1',
+            registerType: 'holding_registers',
+            address: 0,
+            value: 7
+          },
+          'serverView'
+        ]
+      ])
+
+      gen.dispose()
+    })
+
+    // 0.1 * 3 is 0.30000000000000004 in a Number, past a max of 0.3.
+    it('writes a float max that the step reaches only within rounding, then restarts', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData, { dataType: 'float', start: 0, step: 0.1, min: 0, max: 0.3 })
+
+      /** The two words at address 0 read back as the float they encode, ABCD. */
+      const floatAt0 = (): number => {
+        const bytes = Buffer.alloc(4)
+        bytes.writeUInt16BE(wordAt(serverData, 0), 0)
+        bytes.writeUInt16BE(wordAt(serverData, 1), 2)
+        return bytes.readFloatBE(0)
+      }
+
+      const seen: number[] = []
+      for (let i = 0; i < 4; i++) {
+        vi.advanceTimersByTime(1000)
+        seen.push(floatAt0())
+      }
+      expect(seen).toEqual([Math.fround(0.1), Math.fround(0.2), Math.fround(0.3), 0])
+
+      gen.dispose()
+    })
+
+    // A min with 7 decimals made `toFixed(7)` print the float64 digits of
+    // start and max, 1000000000000.0999756 and 1000000000000.1999512.
+    it('writes a double max near 1e12 beside a min of 1e-7, then holds', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData, {
+        dataType: 'double',
+        start: 1000000000000.1,
+        step: 0.1,
+        min: 1e-7,
+        max: 1000000000000.2,
+        restart: false
+      })
+
+      /** The four words at address 0 read back as the double they encode, ABCD. */
+      const doubleAt0 = (): number => {
+        const bytes = Buffer.alloc(8)
+        for (let word = 0; word < 4; word++) {
+          bytes.writeUInt16BE(wordAt(serverData, word), 2 * word)
+        }
+        return bytes.readDoubleBE(0)
+      }
+
+      const seen = [doubleAt0()]
+      for (let i = 0; i < 3; i++) {
+        vi.advanceTimersByTime(1000)
+        seen.push(doubleAt0())
+      }
+      expect(seen).toEqual([1000000000000.1, 1000000000000.2, 1000000000000.2, 1000000000000.2])
+
+      gen.dispose()
+    })
+
+    it('deletes its word on dispose', () => {
+      const serverData = createServerData()
+      const gen = ramp(serverData)
+
+      expect(() => gen.dispose()).not.toThrow()
+      expect(serverData.holding_registers.has(0)).toBe(false)
+    })
+
+    it('reports the params it was built from', () => {
+      const gen = ramp(createServerData(), { restart: false })
+
+      expect(gen.params).toEqual({
+        address: 0,
+        registerType: 'holding_registers',
+        dataType: 'uint16',
+        min: 0,
+        max: 7,
+        interval: 1000,
+        comment: '',
+        mode: 'ramp',
+        start: 5,
+        step: 1,
+        restart: false
+      })
+
+      gen.dispose()
+    })
+
+    it('runs a ramp without a step as a random generator', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)
+      const serverData = createServerData()
+      const gen = ramp(serverData, { step: undefined })
+
+      expect(wordAt(serverData, 0)).toBe(4)
+      expect(gen.params).not.toHaveProperty('mode')
+
+      gen.dispose()
+      vi.spyOn(Math, 'random').mockRestore()
+    })
+
+    it('reports no ramp key for a random generator', () => {
+      const gen = ramp(createServerData(), {
+        mode: undefined,
+        start: undefined,
+        step: undefined,
+        restart: undefined
+      })
+
+      for (const key of ['mode', 'start', 'step', 'restart']) {
+        expect(gen.params).not.toHaveProperty(key)
+      }
+
+      gen.dispose()
+    })
+  })
+
   // `_updateValue` is called by the constructor and by `setInterval`, and
   // neither awaits it. An `async` one turns a throw into a rejection with no
   // handler, so the caller is told nothing and the generator keeps ticking.

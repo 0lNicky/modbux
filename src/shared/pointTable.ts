@@ -4,6 +4,7 @@ import {
   ByteOrderSchema,
   DataType,
   DataTypeSchema,
+  GeneratorModeSchema,
   isBooleanRegister,
   MAX_REGISTER_ADDRESS,
   RegisterMapping,
@@ -20,14 +21,18 @@ import {
 } from './types'
 import {
   createRegisters,
+  FLOAT32_MAX,
   getMinMaxValues,
   getValueRangeError,
   holdsExact64Bits,
   MAX_UTF8_LENGTH,
+  RAMP_DECIMALS,
   registerWidth,
-  ServerRegisterValue
+  ServerRegisterValue,
+  toRampDecimals
 } from './encoding'
 import { emptyRegisterMapping } from './default'
+import { nextRampTick, rampTickValue } from './ramp'
 
 //
 //
@@ -128,6 +133,27 @@ export type Point = z.infer<typeof PointSchema>
  * A `unix` or `datetime` generator reads the clock, so it takes no range.
  */
 export const PointGeneratorSchema = z.object({
+  mode: GeneratorModeSchema.optional().describe(
+    '"random" (the default) draws between min and max. "ramp" starts at start, adds step every interval, and on passing min or max returns to start, or holds if restart is false'
+  ),
+  start: z
+    .number()
+    .optional()
+    .describe(
+      'A ramp: the value it starts at and returns to, in engineering units. On float and double under a scaling, its raw value is rounded to 7 decimals and refused if that moves it by more than a tenth of a step'
+    ),
+  step: z
+    .number()
+    .optional()
+    .describe(
+      'A ramp: what each interval adds, in engineering units; negative counts down. Not 0. On an integer type the raw step is whole after scaling. On float and double the raw step holds 7 raw decimals: unscaled it has no more, and scaled it is rounded to them, and the ramp is refused if that takes its last tick inside min and max more than a tenth of a step from the values asked for'
+    ),
+  restart: z
+    .boolean()
+    .optional()
+    .describe(
+      'A ramp: return to start on passing min or max (the default), or hold the last value'
+    ),
   min: z.number().optional(),
   max: z.number().optional(),
   intervalSeconds: z.number().int().min(1).max(2147483).optional()
@@ -244,9 +270,6 @@ export interface PointScaling {
 
 export type RawConversion = { ok: true; raw: number } | { ok: false; reason: string }
 
-/** The largest finite float32, which `writeFloatBE` turns anything above into Infinity. */
-const FLOAT32_MAX = 3.4028234663852886e38
-
 /** The types whose raw value is a whole number. */
 const WHOLE_NUMBER_TYPES: readonly DataType[] = [
   'int16',
@@ -267,9 +290,83 @@ const WHOLE_NUMBER_TYPES: readonly DataType[] = [
 const isWhole = (value: number): boolean =>
   Math.abs(value - Math.round(value)) <= 1e-9 * Math.max(1, Math.abs(value))
 
+/**
+ * Whether a ramp's raw `value` is whole to within what one `unscale` rounds
+ * off: 0.3 / 0.1 is 2.9999999999999996. `isWhole` takes 1e-9 of the value,
+ * which at 1e9 took 1000000000.25 for whole and wrote 1000000000.
+ */
+const isRampWhole = (value: number): boolean =>
+  Math.abs(value - Math.round(value)) <= 16 * Number.EPSILON * Math.max(1, Math.abs(value))
+
 /** Whether a scaling says anything: a factor other than 1, or an interpolation. */
 const scales = ({ scalingFactor, interpolate }: PointScaling): boolean =>
   (scalingFactor !== undefined && scalingFactor !== 1) || interpolate !== undefined
+
+/**
+ * `value` through the inverse of `scaleValue`, before any data type is asked
+ * whether it holds the answer: the interpolation undone, then the factor.
+ * `engineeringToRaw` refuses the scalings this cannot undo before calling it.
+ */
+const unscale = (value: number, { scalingFactor = 1, interpolate }: PointScaling): number => {
+  const scaled = interpolate
+    ? interpolate.x1 +
+      ((value - interpolate.y1) * (interpolate.x2 - interpolate.x1)) /
+        (interpolate.y2 - interpolate.y1)
+    : value
+  return scaled / scalingFactor
+}
+
+/** `raw` through `scaling` as `scaleValue` applies it, before any rounding for display. */
+const rescale = (raw: number, { scalingFactor = 1, interpolate }: PointScaling): number => {
+  const scaled = raw * scalingFactor
+  return interpolate
+    ? interpolate.y1 +
+        ((scaled - interpolate.x1) * (interpolate.y2 - interpolate.y1)) /
+          (interpolate.x2 - interpolate.x1)
+    : scaled
+}
+
+/**
+ * How far `rescale` of a raw value near `engineering` can land from the exact
+ * product: a multiply, and under an interpolation a subtract, a multiply, a
+ * divide and an add, each rounding by half an epsilon of the largest number
+ * it handles. That is `engineering` itself, or an interpolation's y1 and y2
+ * and its x1 and x2 carried through the slope.
+ */
+const rescaleError = (engineering: number, { interpolate }: PointScaling): number => {
+  if (!interpolate) return 4 * Number.EPSILON * Math.abs(engineering)
+  const slope = Math.abs((interpolate.y2 - interpolate.y1) / (interpolate.x2 - interpolate.x1))
+  return (
+    4 *
+    Number.EPSILON *
+    Math.max(
+      Math.abs(engineering),
+      Math.abs(interpolate.y1),
+      Math.abs(interpolate.y2),
+      slope * Math.abs(interpolate.x1),
+      slope * Math.abs(interpolate.x2)
+    )
+  )
+}
+
+/**
+ * The raw distance an engineering `distance` covers under `scaling`, with its
+ * sign: `unscale` is affine, so this is `distance` times its slope.
+ */
+const unscaleDistance = (
+  distance: number,
+  { scalingFactor = 1, interpolate }: PointScaling
+): number =>
+  (interpolate
+    ? (distance * (interpolate.x2 - interpolate.x1)) / (interpolate.y2 - interpolate.y1)
+    : distance) / scalingFactor
+
+/** The engineering distance one raw unit covers under `scaling`. */
+const resolutionOf = ({ scalingFactor = 1, interpolate }: PointScaling): number =>
+  Math.abs(
+    scalingFactor *
+      (interpolate ? (interpolate.y2 - interpolate.y1) / (interpolate.x2 - interpolate.x1) : 1)
+  )
 
 /**
  * The raw value whose engineering value is `value`, by the inverse of
@@ -300,22 +397,17 @@ export const engineeringToRaw = (
     }
   }
 
-  let scaled = value
   const { interpolate } = scaling
-  if (interpolate) {
-    const { x1, x2, y1, y2 } = interpolate
-    if (x1 === x2 || y1 === y2) {
-      return {
-        ok: false,
-        reason: 'The interpolation answers one value everywhere, so no raw value maps back'
-      }
+  if (interpolate && (interpolate.x1 === interpolate.x2 || interpolate.y1 === interpolate.y2)) {
+    return {
+      ok: false,
+      reason: 'The interpolation answers one value everywhere, so no raw value maps back'
     }
-    scaled = x1 + ((value - y1) * (x2 - x1)) / (y2 - y1)
   }
-
-  const factor = scaling.scalingFactor ?? 1
-  if (factor === 0) return { ok: false, reason: 'A scaling factor of 0 maps every raw value to 0' }
-  let raw = scaled / factor
+  if (scaling.scalingFactor === 0) {
+    return { ok: false, reason: 'A scaling factor of 0 maps every raw value to 0' }
+  }
+  let raw = unscale(value, scaling)
 
   if (WHOLE_NUMBER_TYPES.includes(dataType)) {
     if (!isWhole(raw)) {
@@ -367,6 +459,11 @@ export interface ResolvedGenerator {
   min: number
   max: number
   intervalMs: number
+  /** Present for a ramp only, with `start`, `step` and `restart` in raw values. */
+  mode?: 'ramp'
+  start?: number
+  step?: number
+  restart?: boolean
 }
 
 /** What an accepted point is, once the table's notation and scaling are taken out. */
@@ -447,6 +544,192 @@ const pointDataType = (
   return { ok: true, dataType: parsed.data }
 }
 
+/**
+ * The part of a step a scaled float or double ramp may miss the values asked
+ * for by, at its first tick and at its last. Its error grows linearly from one
+ * to the other, so the two bound every tick between, and a restart returns to
+ * the first. Well under a half, where the number of steps changes.
+ */
+const RAMP_TICK_ERROR = 0.1
+
+/**
+ * The raw bounds under which a scaled float or double ramp writes the
+ * engineering values `start + k * step` for k from 0 to n, the last k inside
+ * min to max, or why 7 raw decimals cannot hold that sequence.
+ *
+ * The bound the ramp walks toward admits tick n, because a step rounded up
+ * carries tick n past that bound rounded alone: raw 0.1666667 three times is
+ * 0.5000001, beside a max of 0.3 under a factor of 0.6 at raw 0.5.
+ */
+const fitRampSequence = (
+  { start, step, min, max }: { start: number; step: number; min: number; max: number },
+  raw: { start: number; step: number; low: number; high: number },
+  scaling: PointScaling,
+  describeResolution: string
+): { ok: true; low: number; high: number } | { ok: false; reason: string } => {
+  const allowed = RAMP_TICK_ERROR * Math.abs(step)
+  const startError = Math.abs(rescale(raw.start, scaling) - start)
+  if (startError > allowed) {
+    return reject(`Ramp start: ${start} is not a multiple of ${describeResolution}`)
+  }
+  const target = step > 0 ? Math.max(min, max) : Math.min(min, max)
+  // 0.3 / 0.1 is 2.9999999999999996, which is 3 steps.
+  const quotient = (target - start) / step
+  const count = Math.max(0, Math.floor(quotient + 1e-9 * Math.max(1, Math.abs(quotient))))
+  const endsWithin = (ticks: number): boolean =>
+    Math.abs(
+      rescale(rampTickValue(raw.start, raw.step, ticks), scaling) - (start + ticks * step)
+    ) <= allowed
+  if (!endsWithin(count)) {
+    // The error grows by `stepError` a tick. Float error can put the
+    // estimate one tick past the last one within `allowed`.
+    const stepError = Math.abs(rescale(raw.step, scaling) - rescale(0, scaling) - step)
+    const estimate = Math.floor((allowed - startError) / stepError)
+    const held = endsWithin(estimate) ? estimate : estimate - 1
+    return reject(
+      `Ramp step: ${step} is not a multiple of ${describeResolution}, which keeps a ramp within a tenth of a step for ${held} steps, and this one asks for ${count}`
+    )
+  }
+  const last = rampTickValue(raw.start, raw.step, count)
+  const bounds =
+    raw.step > 0
+      ? { low: raw.low, high: Math.max(raw.high, last) }
+      : { low: Math.min(raw.low, last), high: raw.high }
+  const spec = { start: raw.start, step: raw.step, min: bounds.low, max: bounds.high }
+  if (nextRampTick({ ...spec, restart: false }, count).kind !== 'hold') {
+    return reject(
+      `Ramp step: ${step} reaches ${target} in ${count} steps, and at ${describeResolution} the raw ramp takes another`
+    )
+  }
+  return { ok: true, ...bounds }
+}
+
+/** A ramp in raw values: the bounds lowest first, and the step as the raw distance it covers. */
+const rampGenerator = (
+  generator: PointGenerator,
+  dataType: DataType,
+  scaling: PointScaling,
+  intervalMs: number
+): { ok: true; generator: ResolvedGenerator } | { ok: false; reason: string } => {
+  if (dataType === 'unix' || dataType === 'datetime') {
+    return reject(`A ${dataType} generator reads the clock and cannot ramp`)
+  }
+  const { start, step, min, max } = generator
+  if (start === undefined || step === undefined || min === undefined || max === undefined) {
+    return reject('A ramp needs a start, a step, a min and a max')
+  }
+  const rawStart = engineeringToRaw(start, dataType, scaling)
+  if (!rawStart.ok) return reject(`Ramp start: ${rawStart.reason}`)
+  const whole = WHOLE_NUMBER_TYPES.includes(dataType)
+  // A float or double ramp holds `RAMP_DECIMALS` decimals. A scaled raw
+  // value is rounded to them, because 20 / 0.3 is 66.66666666666667 and the
+  // schema refuses it. An unscaled one is the number given, and the schema
+  // refuses it if it has more.
+  const toRaw = (raw: number): number => (whole || !scales(scaling) ? raw : toRampDecimals(raw))
+  const rawStep = whole
+    ? wholeRampStep(step, dataType, scaling)
+    : { ok: true as const, raw: toRaw(unscaleDistance(step, scaling)) }
+  if (!rawStep.ok) return rawStep
+  // `wholeRampStep` answers this for an integer type; here `toRaw` has
+  // rounded a float or double step finer than 7 raw decimals to 0.
+  const resolution = `the resolution of ${resolutionOf(scaling) / 10 ** RAMP_DECIMALS} this scaling gives a ${dataType}`
+  if (step !== 0 && rawStep.raw === 0) {
+    return reject(`Ramp step: ${step} is smaller than ${resolution}`)
+  }
+  if (rawStep.raw === 0) return reject('The ramp step is 0 after scaling')
+  const rawMin = engineeringToRaw(min, dataType, scaling)
+  if (!rawMin.ok) return reject(`Generator min: ${rawMin.reason}`)
+  const rawMax = engineeringToRaw(max, dataType, scaling)
+  if (!rawMax.ok) return reject(`Generator max: ${rawMax.reason}`)
+  if (whole) {
+    for (const [label, value] of [
+      ['Ramp start', start],
+      ['Generator min', min],
+      ['Generator max', max]
+    ] as const) {
+      const raw = unscale(value, scaling)
+      if (!isRampWhole(raw)) {
+        return reject(
+          `${label}: Engineering value ${value} is raw ${raw}, and a ${dataType} holds whole numbers`
+        )
+      }
+    }
+  }
+  // A negative factor turns the range around, so it is stored lowest first.
+  // The start is compared before `toRaw`, which can round a start past max
+  // onto it.
+  const low = Math.min(rawMin.raw, rawMax.raw)
+  const high = Math.max(rawMin.raw, rawMax.raw)
+  if (rawStart.raw < low || rawStart.raw > high) {
+    return reject('The ramp start has to be between its min and max')
+  }
+  // `toRaw` rounds a bound to the nearest 7 decimals. It is kept while it
+  // scales back inside min to max up to `rescaleError`, as raw 0.87 does for a
+  // max of 8.7 under a factor of 10 though 8.7 / 10 is 0.8699999999999999.
+  // Past that it is outside, and min goes up a unit or max down one: raw
+  // 1.6e-7 rounds to 2e-7, which is 4e-7 under a factor of 2.
+  // `fitRampSequence` can then widen the bound the ramp walks toward to its
+  // last tick.
+  const unit = 1 / 10 ** RAMP_DECIMALS
+  const error = rescaleError(Math.max(Math.abs(min), Math.abs(max)), scaling)
+  const reachesInside = (raw: number): boolean => {
+    const engineering = rescale(raw, scaling)
+    return engineering >= Math.min(min, max) - error && engineering <= Math.max(min, max) + error
+  }
+  const rawLow = reachesInside(toRaw(low)) ? toRaw(low) : toRampDecimals(toRaw(low) + unit)
+  const rawHigh = reachesInside(toRaw(high)) ? toRaw(high) : toRampDecimals(toRaw(high) - unit)
+  if (rawLow > rawHigh) {
+    return reject(
+      `Ramp min ${min} and max ${max} hold no raw value at ${RAMP_DECIMALS} decimals under this scaling`
+    )
+  }
+  const rawStartWritten = Math.min(Math.max(toRaw(rawStart.raw), rawLow), rawHigh)
+  const fitted =
+    whole || !scales(scaling)
+      ? { ok: true as const, low: rawLow, high: rawHigh }
+      : fitRampSequence(
+          { start, step, min, max },
+          { start: rawStartWritten, step: rawStep.raw, low: rawLow, high: rawHigh },
+          scaling,
+          resolution
+        )
+  if (!fitted.ok) return fitted
+  return {
+    ok: true,
+    generator: {
+      min: fitted.low,
+      max: fitted.high,
+      intervalMs,
+      mode: 'ramp',
+      start: rawStartWritten,
+      step: rawStep.raw,
+      restart: generator.restart ?? true
+    }
+  }
+}
+
+/**
+ * The raw step of an integer ramp, or why the step is not a whole raw step.
+ *
+ * The step is unscaled as a distance rather than as `start + step`, because
+ * `isRampWhole` grows with the number it measures. The start has already
+ * refused a scaling `unscaleDistance` cannot undo.
+ */
+const wholeRampStep = (
+  step: number,
+  dataType: DataType,
+  scaling: PointScaling
+): { ok: true; raw: number } | { ok: false; reason: string } => {
+  const distance = unscaleDistance(step, scaling)
+  const raw = Math.round(distance)
+  if (step !== 0 && (!isRampWhole(distance) || raw === 0)) {
+    return reject(
+      `Ramp step: ${step} is smaller than, or not a multiple of, the resolution of ${resolutionOf(scaling)} this scaling gives a ${dataType}`
+    )
+  }
+  return { ok: true, raw }
+}
+
 /** The server half of a point: its fixed raw value, or its generator in raw values. */
 const serverValue = (
   point: ServerPoint,
@@ -488,6 +771,14 @@ const serverValue = (
 
   if (generator !== undefined) {
     const intervalMs = (generator.intervalSeconds ?? 1) * 1000
+    if (generator.mode === 'ramp') return rampGenerator(generator, dataType, scaling, intervalMs)
+    if (
+      generator.start !== undefined ||
+      generator.step !== undefined ||
+      generator.restart !== undefined
+    ) {
+      return reject('start, step and restart belong to a ramp; set mode to "ramp"')
+    }
     // A timestamp generator reads the clock, and the store pins its range to 0.
     if (dataType === 'unix' || dataType === 'datetime') {
       if (generator.min !== undefined || generator.max !== undefined) {
@@ -752,7 +1043,10 @@ export const serverRegisterParams = (point: ResolvedPoint): RegisterParams | und
     }
   }
   if (point.generator) {
-    const { min, max, intervalMs } = point.generator
+    const { min, max, intervalMs, mode, start, step, restart } = point.generator
+    if (mode === 'ramp') {
+      return { ...base, min, max, interval: intervalMs, mode, start, step, restart }
+    }
     return { ...base, min, max, interval: intervalMs }
   }
   return { ...base, value: typeof point.raw === 'number' ? point.raw : 0 }

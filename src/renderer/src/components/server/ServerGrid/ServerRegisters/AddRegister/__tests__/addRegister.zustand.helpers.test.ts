@@ -5,6 +5,7 @@ import {
   FIELD_DEFAULTS,
   isAddressInUse,
   isFormDirty,
+  isRampFormValid,
   toFormSnapshot,
   toRegisterParams,
   utf8MaxBytes,
@@ -121,7 +122,11 @@ describe('isFormDirty', () => {
     interval: '5',
     comment: 'flow rate',
     stringValue: '',
-    registerLength: ''
+    registerLength: '',
+    generatorMode: 'random',
+    start: '0',
+    step: '1',
+    restart: true
   }
 
   it('is clean while nothing has been typed', () => {
@@ -155,6 +160,10 @@ describe('isFormDirty', () => {
   it('is clean in add mode, where nothing was captured', () => {
     expect(isFormDirty({ ...opened, address: '200' }, undefined)).toBe(false)
   })
+
+  it('is dirty on the restart box alone', () => {
+    expect(isFormDirty({ ...opened, restart: false }, opened)).toBe(true)
+  })
 })
 
 describe('toFormSnapshot', () => {
@@ -170,7 +179,11 @@ describe('toFormSnapshot', () => {
       interval: '2',
       comment: 'pressure',
       stringValue: 'PUMP',
-      registerLength: '4'
+      registerLength: '4',
+      generatorMode: 'ramp',
+      start: '3',
+      step: '-2',
+      restart: false
     }
 
     expect(toFormSnapshot(form)).toEqual({
@@ -183,7 +196,11 @@ describe('toFormSnapshot', () => {
       interval: '2',
       comment: 'pressure',
       stringValue: 'PUMP',
-      registerLength: '4'
+      registerLength: '4',
+      generatorMode: 'ramp',
+      start: '3',
+      step: '-2',
+      restart: false
     })
   })
 })
@@ -200,7 +217,11 @@ describe('toRegisterParams', () => {
     interval: '5',
     comment: 'flow rate',
     stringValue: '',
-    registerLength: ''
+    registerLength: '',
+    generatorMode: 'random',
+    start: '0',
+    step: '1',
+    restart: true
   }
 
   it('carries the address, type and comment through unchanged', () => {
@@ -256,6 +277,69 @@ describe('toRegisterParams', () => {
     expect(toRegisterParams({ ...form, dataType: 'utf8', registerLength: '' })).toMatchObject({
       length: 10
     })
+  })
+
+  const ramp: RegisterFormValues = {
+    ...form,
+    fixed: false,
+    generatorMode: 'ramp',
+    start: '80',
+    step: '-1',
+    min: '20',
+    max: '80',
+    interval: '2',
+    restart: true
+  }
+
+  it('a ramp carries its start, step and restart beside the range', () => {
+    expect(toRegisterParams(ramp)).toEqual({
+      address: 40,
+      dataType: 'uint16',
+      registerType: 'holding_registers',
+      comment: 'flow rate',
+      min: 20,
+      max: 80,
+      interval: 2000,
+      mode: 'ramp',
+      start: 80,
+      step: -1,
+      restart: true
+    })
+  })
+
+  it('a random generator carries none of the ramp fields', () => {
+    const params = toRegisterParams({ ...ramp, generatorMode: 'random' })
+    for (const key of ['mode', 'start', 'step', 'restart']) {
+      expect(params).not.toHaveProperty(key)
+    }
+  })
+
+  it('a timestamp left on ramp generates the clock and carries no ramp field', () => {
+    const params = toRegisterParams({ ...ramp, dataType: 'unix' })
+    expect(params).toMatchObject({ min: 0, max: 0, interval: 2000 })
+    for (const key of ['mode', 'start', 'step', 'restart']) {
+      expect(params).not.toHaveProperty(key)
+    }
+  })
+})
+
+describe('isRampFormValid', () => {
+  const ramp = { start: '80', step: '-1', min: '20', max: '80' }
+
+  it('takes a ramp whose start sits inside its range', () => {
+    expect(isRampFormValid(ramp)).toBe(true)
+  })
+
+  it('refuses a step of 0', () => {
+    expect(isRampFormValid({ ...ramp, step: '0' })).toBe(false)
+  })
+
+  it('refuses a start above the max', () => {
+    expect(isRampFormValid({ ...ramp, start: '81' })).toBe(false)
+  })
+
+  it('refuses a min above the max', () => {
+    expect(isRampFormValid({ ...ramp, start: '3', min: '5', max: '1' })).toBe(false)
   })
 })
 

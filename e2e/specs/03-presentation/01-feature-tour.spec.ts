@@ -262,6 +262,32 @@ test.describe.serial('Act II — Building the Simulator', () => {
     await beat(mainPage, 300)
   })
 
+  test('scene 9b — add register: UINT16 ramp', async ({ mainPage }) => {
+    await mainPage.getByTestId('add-holding_registers-btn').click()
+    await expect(mainPage.getByTestId('add-reg-address-input')).toBeVisible()
+
+    await selectDataType(mainPage, 'UINT16')
+    await mainPage.getByTestId('add-reg-ramp-btn').click()
+    await mainPage.getByTestId('add-reg-address-input').locator('input').fill('104')
+    const startInput = mainPage.getByTestId('add-reg-start-input').locator('input')
+    await expect(startInput).toBeVisible()
+    await startInput.fill('80')
+    await mainPage.getByTestId('add-reg-step-input').locator('input').fill('-1')
+    await mainPage.getByTestId('add-reg-min-input').locator('input').fill('20')
+    await mainPage.getByTestId('add-reg-max-input').locator('input').fill('80')
+    await mainPage.getByTestId('add-reg-interval-input').locator('input').fill('1')
+    const commentInput9b = mainPage.getByTestId('add-reg-comment-input').locator('input')
+    await commentInput9b.fill('Humidity (%)')
+    await commentInput9b.evaluate((el) => (el as HTMLElement).blur())
+    await beat(mainPage)
+
+    const modal = paperOf(mainPage, 'add-reg-address-input')
+    await modal.screenshot({ path: resolve(SHOTS, 'add-register-uint16-ramp.png') })
+
+    await mainPage.keyboard.press('Escape')
+    await beat(mainPage, 300)
+  })
+
   test('scene 10 — add register: BITMAP fixed', async ({ mainPage }) => {
     await mainPage.getByTestId('add-holding_registers-btn').click()
     await expect(mainPage.getByTestId('add-reg-address-input')).toBeVisible()

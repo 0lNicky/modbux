@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A connection setting waits until you disconnect, and Modbux says so, as it
   does when there is nothing left to undo. In a text field the keys undo your
   typing. Each view keeps its last 100 steps until Modbux closes.
+- **Ramp registers.** A server register can count up or down: pick Ramp in
+  the add register dialog and set Start, Step, Min, Max and Interval. Every
+  interval adds Step, and a negative Step counts down. When the next value
+  would pass Min or Max, it returns to Start, or with Restart unchecked it
+  stays at the last value inside the range. That simulates a kWh counter that
+  overflows, or a humidity reading that falls through an alarm threshold. An
+  agent sets one over MCP with `server_apply_point_table` and reads it back
+  with `server_get_values`.
 
 ### Changed
 

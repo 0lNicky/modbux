@@ -96,7 +96,7 @@ const serverApplyPointTable = defineTool({
   name: 'server_apply_point_table',
   title: 'Apply a point table to a server',
   description:
-    'Set up a Modbux server as a simulator of a point table. Each point gets its address (pdu0, one_based or modicon notation), data type, name/unit/comment, and either a fixed engineering value or a generator range in engineering units; the raw value is computed by the inverse of the scaling factor and interpolation, and refused when it does not fit the data type. On apply, the registers of each unit the table names are replaced and the table byte order is applied to the server, as one undo step. Every point is answered accepted or rejected with the reason; only accepted points are applied. dryRun answers the report and changes nothing. The server is named by uuid or port.',
+    'Set up a Modbux server as a simulator of a point table. Each point gets its address (pdu0, one_based or modicon notation), data type, name/unit/comment, and either a fixed engineering value or a generator in engineering units: a random range (min, max), or a ramp (mode "ramp" with start, step, min, max and restart: it adds step every interval and returns to start past min or max, or holds when restart is false); the raw value is computed by the inverse of the scaling factor and interpolation, and refused when it does not fit the data type. On apply, the registers of each unit the table names are replaced and the table byte order is applied to the server, as one undo step. Every point is answered accepted or rejected with the reason; only accepted points are applied. dryRun answers the report and changes nothing. The server is named by uuid or port.',
   inputSchema: {
     ...TARGET_INPUT,
     unitId: UnitIdSchema.optional().describe(
@@ -168,7 +168,15 @@ interface ServerRegisterRow {
    * three decimals and a datetime as its packed composite.
    */
   words?: number[]
-  generator?: { min: number; max: number; intervalMs: number }
+  generator?: {
+    min: number
+    max: number
+    intervalMs: number
+    mode?: 'ramp'
+    start?: number
+    step?: number
+    restart?: boolean
+  }
 }
 
 /** Where a unit's registers are, so their words can be read from main's server. */
@@ -255,7 +263,21 @@ const rowsOf = (
             : decodeWords(params.dataType, words, order, value),
         words,
         ...(params.min !== undefined && params.max !== undefined && params.interval !== undefined
-          ? { generator: { min: params.min, max: params.max, intervalMs: params.interval } }
+          ? {
+              generator: {
+                min: params.min,
+                max: params.max,
+                intervalMs: params.interval,
+                ...(params.mode === 'ramp'
+                  ? {
+                      mode: params.mode,
+                      start: params.start,
+                      step: params.step,
+                      restart: params.restart ?? true
+                    }
+                  : {})
+              }
+            }
           : {})
       })
     }
@@ -271,7 +293,7 @@ const serverGetValues = defineTool({
   name: 'server_get_values',
   title: 'Get the values of a server',
   description:
-    "What a Modbux server holds, per unit: every coil and discrete input with its bit, and every input and holding register with its data type, comment, its raw value (decoded in the server's byte order), the 16 bit words a master reads, and its generator where one drives it. The server is named by uuid or port; unitId narrows it to one unit.",
+    "What a Modbux server holds, per unit: every coil and discrete input with its bit, and every input and holding register with its data type, comment, its raw value (decoded in the server's byte order), the 16 bit words a master reads, and its generator where one drives it (a ramp also reports mode, start, step and restart, in raw values). The server is named by uuid or port; unitId narrows it to one unit.",
   inputSchema: { ...TARGET_INPUT, unitId: UnitIdSchema.optional() },
   annotations: { readOnlyHint: true, openWorldHint: false },
   run: (input, context) =>

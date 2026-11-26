@@ -2,8 +2,10 @@ import {
   BaseDataType,
   DataType,
   DEFAULT_UTF8_LENGTH,
+  GeneratorMode,
   getAddressFitError,
   getMinMaxValues,
+  getRampValueError,
   NumberRegisters,
   RegisterParams,
   RegisterParamsBasePart,
@@ -137,6 +139,11 @@ export interface RegisterFormValues {
   comment: string
   stringValue: string
   registerLength: string
+  /** Which generator `fixed: false` means. Fixed leaves it as it was. */
+  generatorMode: GeneratorMode
+  start: string
+  step: string
+  restart: boolean
 }
 
 /**
@@ -152,7 +159,9 @@ export const FIELD_DEFAULTS = {
   min: '0',
   max: '1',
   interval: '1',
-  registerLength: String(DEFAULT_UTF8_LENGTH)
+  registerLength: String(DEFAULT_UTF8_LENGTH),
+  start: '0',
+  step: '1'
 }
 
 /**
@@ -194,7 +203,11 @@ export const toFormSnapshot = (form: RegisterFormSnapshot): RegisterFormSnapshot
   interval: form.interval,
   comment: form.comment,
   stringValue: form.stringValue,
-  registerLength: form.registerLength
+  registerLength: form.registerLength,
+  generatorMode: form.generatorMode,
+  start: form.start,
+  step: form.step,
+  restart: form.restart
 })
 
 /**
@@ -253,10 +266,63 @@ export const toRegisterParams = (form: RegisterFormValues): RegisterParams => {
 
   if (form.fixed) return { ...base, value: Number(form.value) }
 
-  return {
+  const generator = {
     ...base,
     min: Number(form.min),
     max: Number(form.max),
     interval: Number(form.interval) * 1000
   }
+  if (form.generatorMode === 'random') return generator
+
+  return {
+    ...generator,
+    mode: 'ramp',
+    start: Number(form.start),
+    step: Number(form.step),
+    restart: form.restart
+  }
 }
+
+type RampFields = Pick<RegisterFormValues, 'start' | 'step' | 'min' | 'max'>
+
+/**
+ * Which ramp field breaks a rule `RegisterParamsSchema` holds a ramp to.
+ *
+ * `range` is a min above the max. `start` is a start outside them, and is not
+ * reported while `range` is, because there is no inside to be outside of.
+ */
+export const rampFieldErrors = (
+  form: RampFields
+): { start: boolean; step: boolean; range: boolean } => {
+  const start = Number(form.start)
+  const min = Number(form.min)
+  const max = Number(form.max)
+  const range = min > max
+
+  return {
+    start: !range && (start < min || start > max),
+    step: Number(form.step) === 0,
+    range
+  }
+}
+
+/** Whether the ramp fields pass every rule the schema holds a ramp to. */
+export const isRampFormValid = (form: RampFields): boolean => {
+  const errors = rampFieldErrors(form)
+  return !errors.start && !errors.step && !errors.range
+}
+
+type RampValueFields = Pick<RegisterFormValues, 'dataType' | 'start' | 'min' | 'max'>
+
+/**
+ * Which of a ramp's start, min and max `getRampValueError` refuses, the rule
+ * `RegisterParamsSchema` holds them to. The masks take a float past
+ * `FLOAT32_MAX` and a double past `Number.MAX_VALUE`, so the field says it.
+ */
+export const rampValueErrors = (
+  form: RampValueFields
+): { start: boolean; min: boolean; max: boolean } => ({
+  start: getRampValueError(form.dataType, 'start', Number(form.start)) !== undefined,
+  min: getRampValueError(form.dataType, 'min', Number(form.min)) !== undefined,
+  max: getRampValueError(form.dataType, 'max', Number(form.max)) !== undefined
+})

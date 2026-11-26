@@ -522,6 +522,184 @@ describe('Server RegisterParamsSchema — what a generator draws between', () =>
   })
 })
 
+describe('Server RegisterParamsSchema — ramp generator', () => {
+  const random = {
+    address: 0,
+    registerType: 'holding_registers',
+    dataType: 'uint16',
+    comment: '',
+    min: 0,
+    max: 10,
+    interval: 1000
+  }
+  const ramp = { ...random, mode: 'ramp', start: 0, step: 1 }
+
+  const issuePaths = (input: unknown): (string | number)[][] => {
+    const result = RegisterParamsSchema.safeParse(input)
+    expect(result.success).toBe(false)
+    return result.error?.issues.map((issue) => issue.path) ?? []
+  }
+
+  it('accepts a ramp, with restart on or off', () => {
+    expect(RegisterParamsSchema.safeParse(ramp).success).toBe(true)
+    expect(RegisterParamsSchema.safeParse({ ...ramp, restart: false }).success).toBe(true)
+  })
+
+  it('accepts a stored random generator, which carries no mode', () => {
+    expect(RegisterParamsSchema.safeParse(random).success).toBe(true)
+  })
+
+  it('rejects a step of 0', () => {
+    expect(issuePaths({ ...ramp, step: 0 })).toContainEqual(['step'])
+  })
+
+  it.each(['step', 'start'] as const)('rejects a ramp without %s', (field) => {
+    const incomplete = Object.fromEntries(Object.entries(ramp).filter(([key]) => key !== field))
+    expect(issuePaths(incomplete)).toContainEqual([field])
+  })
+
+  it('rejects a min above the max', () => {
+    expect(issuePaths({ ...ramp, min: 10, max: 0, start: 5 })).toContainEqual(['min'])
+  })
+
+  it('rejects a start outside min and max', () => {
+    expect(issuePaths({ ...ramp, start: 11 })).toContainEqual(['start'])
+  })
+
+  it('rejects a fractional step or start on an integer type', () => {
+    expect(issuePaths({ ...ramp, step: 0.5 })).toContainEqual(['step'])
+    expect(issuePaths({ ...ramp, start: 0.5 })).toContainEqual(['start'])
+  })
+
+  it.each(['min', 'max'] as const)('rejects a fractional %s on an integer ramp', (field) => {
+    expect(issuePaths({ ...ramp, start: 1, min: 0.5, max: 4.5 })).toContainEqual([field])
+  })
+
+  it('accepts a fractional min and max on an integer random generator', () => {
+    expect(RegisterParamsSchema.safeParse({ ...random, min: 0.5, max: 4.5 }).success).toBe(true)
+  })
+
+  it('accepts a fractional step on a float', () => {
+    expect(RegisterParamsSchema.safeParse({ ...ramp, dataType: 'float', step: 0.5 }).success).toBe(
+      true
+    )
+  })
+
+  it.each(['unix', 'datetime', 'utf8', 'bitmap', 'none'])('rejects a ramp on %s', (dataType) => {
+    expect(issuePaths({ ...ramp, dataType })).toContainEqual(['mode'])
+  })
+
+  it.each([
+    ['start', 0],
+    ['step', 1],
+    ['restart', true]
+  ])('rejects a random generator carrying %s', (field, fieldValue) => {
+    expect(issuePaths({ ...random, [field]: fieldValue })).toContainEqual([field])
+  })
+
+  // `writeFloatBE(4e38)` writes Infinity, so a bound past float32 reaches the
+  // register as a value no bound allows.
+  it('rejects a float ramp bound beyond what a float holds', () => {
+    const float = { ...ramp, dataType: 'float' }
+    expect(issuePaths({ ...float, max: 4e38 })).toContainEqual(['max'])
+    expect(issuePaths({ ...float, min: -4e38, start: 0 })).toContainEqual(['min'])
+    expect(RegisterParamsSchema.safeParse({ ...float, max: 3.4e38 }).success).toBe(true)
+  })
+
+  it.each(['min', 'max', 'start', 'step'] as const)(
+    'rejects a ramp %s that is not finite',
+    (field) => {
+      const infinite = field === 'min' ? -Infinity : Infinity
+      expect(issuePaths({ ...ramp, dataType: 'double', [field]: infinite })).toContainEqual([field])
+    }
+  )
+
+  it('accepts a stored random float generator with bounds past float32, as before', () => {
+    const float = { ...random, dataType: 'float', min: -4e38, max: 4e38 }
+    expect(RegisterParamsSchema.safeParse(float).success).toBe(true)
+  })
+
+  // The Step field masks to the type's span, so a larger stored step came back
+  // from the edit dialog as the span.
+  it.each([
+    ['uint16', 65535],
+    ['int16', 65535],
+    ['uint32', 4294967295]
+  ] as const)('holds a %s ramp step to the span of the type, %d', (dataType, span) => {
+    expect(RegisterParamsSchema.safeParse({ ...ramp, dataType, step: span }).success).toBe(true)
+    expect(RegisterParamsSchema.safeParse({ ...ramp, dataType, step: -span }).success).toBe(true)
+    expect(issuePaths({ ...ramp, dataType, step: span + 1 })).toContainEqual(['step'])
+    expect(issuePaths({ ...ramp, dataType, step: -span - 1 })).toContainEqual(['step'])
+  })
+
+  it('keeps a step larger than the ramp range but inside the type span', () => {
+    const overshoot = { ...ramp, start: 5, step: 100, min: 0, max: 10 }
+    expect(RegisterParamsSchema.safeParse(overshoot).success).toBe(true)
+  })
+
+  // The Step field writes no exponent and keeps seven decimals, so a step it
+  // cannot show came back from the edit dialog as a different number.
+  it.each(['float', 'double'] as const)(
+    'holds a %s ramp step to what the Step field shows',
+    (dataType) => {
+      const accepts = (step: number): boolean =>
+        RegisterParamsSchema.safeParse({ ...ramp, dataType, min: -1e20, max: 1e20, step }).success
+      expect(accepts(0.1)).toBe(true)
+      expect(accepts(0.0000001)).toBe(true)
+      expect(accepts(Number.MAX_SAFE_INTEGER)).toBe(true)
+      expect(accepts(0.12345678)).toBe(false)
+      expect(accepts(1e-10)).toBe(false)
+      expect(accepts(Number.MAX_SAFE_INTEGER + 1)).toBe(false)
+      expect(accepts(1e21)).toBe(false)
+    }
+  )
+
+  // The Start, Min and Max fields keep seven decimals, so a value with more
+  // came back from the edit dialog as a different number.
+  it.each(['float', 'double'] as const)(
+    'holds a %s ramp start, min and max to the decimals the fields keep',
+    (dataType) => {
+      const float = { ...ramp, dataType, start: 0, min: -1, max: 1 }
+      expect(RegisterParamsSchema.safeParse({ ...float, start: 0.0000001 }).success).toBe(true)
+      expect(issuePaths({ ...float, start: 0.12345678 })).toEqual([['start']])
+      expect(issuePaths({ ...float, min: -1e-10 })).toEqual([['min']])
+      expect(issuePaths({ ...float, max: 0.12345678 })).toEqual([['max']])
+    }
+  )
+
+  it('accepts a stored random float generator with bounds of more decimals, as before', () => {
+    const float = { ...random, dataType: 'float', min: 1e-10, max: 0.123456789 }
+    expect(RegisterParamsSchema.safeParse(float).success).toBe(true)
+  })
+
+  // `start + n * step` overflows to Infinity at n = 2 for this step. Held to
+  // `Number.MAX_SAFE_INTEGER`, a step reaches that only after about 1e292 ticks.
+  it('rejects a double step large enough to overflow start plus two steps', () => {
+    const overflowing = {
+      ...ramp,
+      dataType: 'double',
+      start: -1.5e308,
+      step: 1e308,
+      min: -1.5e308,
+      max: 1.5e308,
+      restart: false
+    }
+    expect(issuePaths(overflowing)).toEqual([['step']])
+  })
+
+  it('rejects a fixed register carrying mode', () => {
+    const fixed = {
+      address: 0,
+      registerType: 'holding_registers',
+      dataType: 'uint16',
+      comment: '',
+      value: 1,
+      mode: 'ramp'
+    }
+    expect(RegisterParamsSchema.safeParse(fixed).success).toBe(false)
+  })
+})
+
 // Nothing between the keyboard and the wire clamped: `LengthField` passed no
 // `max`, `UintInput` defaults to 65535, `setLength` stores the number as given,
 // `length` was `z.number().int().positive()`, and `_scanUnitIds` hands it to

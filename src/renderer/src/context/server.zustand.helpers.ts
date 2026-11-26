@@ -2,6 +2,7 @@ import {
   ByteOrderFlags,
   checkHasConfig,
   DEFAULT_MODBUS_PORT,
+  dropRefusedPersistedRamps,
   defaultSerialPortOptions,
   EncodableDataType,
   findAvailablePort,
@@ -183,22 +184,32 @@ export const unitRegisters = (
  * entries to walk and an empty one written back would parse. The caller leaves
  * the field where it is and `repairPersisted` resets it to the one main
  * server. An array goes the same way: its indices are not uuids.
+ *
+ * A ramp register the schema refuses goes alone before that, and
+ * `droppedRamp` says so: no field resets for it, so the caller has nothing
+ * else to tell it the servers changed.
  */
 export const repairServers = (
   servers: unknown
-): { servers: Record<string, PersistedServer>; fields: string[] } | undefined => {
+):
+  | { servers: Record<string, PersistedServer>; fields: string[]; droppedRamp: boolean }
+  | undefined => {
   if (typeof servers !== 'object' || servers === null || Array.isArray(servers)) return undefined
 
   const repaired: Record<string, PersistedServer> = {}
   const fields = new Set<string>()
+  let droppedRamp = false
 
-  for (const [uuid, server] of Object.entries(servers)) {
+  for (const [uuid, stored] of Object.entries(servers)) {
+    // A copy, because the drop writes into it and `stored` is the store's own.
+    const server: unknown = structuredClone(stored)
+    if (dropRefusedPersistedRamps(server)) droppedRamp = true
     const repair = repairPersisted(PersistedServerSchema, server, getDefaultServer())
     repaired[uuid] = repair.state
     for (const field of repair.reset?.fields ?? []) fields.add(field)
   }
 
-  return { servers: repaired, fields: [...fields] }
+  return { servers: repaired, fields: [...fields], droppedRamp }
 }
 
 /**

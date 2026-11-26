@@ -307,6 +307,58 @@ export function dropUnservableConfigRegisters(parsed: Record<string, unknown>): 
 }
 
 /**
+ * Drop the ramp registers of one unit that the schema refuses, and answer
+ * whether any went.
+ *
+ * Review Focus 4 of the ramp plan: a hand-edited ramp with no `step` costs
+ * itself and leaves the rest loaded. A file of this version or older, and a
+ * store at its own version, refuse every other bad register whole, and that
+ * stays so: the walk takes a register only where its `params` say `ramp`.
+ */
+const dropRefusedRamps = (registersByType: Record<string, unknown>): boolean => {
+  let dropped = false
+
+  for (const [key, entriesByAddress] of recordEntries(registersByType)) {
+    const registerType = NumberRegistersSchema.safeParse(key)
+    if (!registerType.success) continue
+
+    for (const [address, entry] of recordEntries(entriesByAddress)) {
+      if (!isRecord(entry.params) || entry.params.mode !== 'ramp') continue
+      if (isServable(registerType.data, address, entry)) continue
+      delete entriesByAddress[address]
+      dropped = true
+    }
+  }
+  return dropped
+}
+
+/** `dropRefusedRamps` over every unit of a parsed server config file. */
+export function dropRefusedConfigRamps(parsed: Record<string, unknown>): void {
+  for (const [, registersByType] of recordEntries(parsed.serverRegistersPerUnit)) {
+    dropRefusedRamps(registersByType)
+  }
+}
+
+/**
+ * `dropRefusedRamps` over every unit of one persisted server, and whether any
+ * went. The used addresses of a unit it took from are rewritten, because
+ * `isAddressInUse` refuses an address against them.
+ */
+export function dropRefusedPersistedRamps(server: unknown): boolean {
+  if (!isRecord(server)) return false
+  const usedPerUnit = server.usedAddresses
+  let dropped = false
+
+  for (const [unitId, registersByType] of recordEntries(server.registers)) {
+    if (!dropRefusedRamps(registersByType)) continue
+    dropped = true
+    if (!isRecord(usedPerUnit) || !UnitIdStringSchema.safeParse(unitId).success) continue
+    usedPerUnit[unitId] = usedAddressesOfUnit(registersByType)
+  }
+  return dropped
+}
+
+/**
  * Drop the mapping entries a client config from a newer Modbux carries that
  * this one cannot read.
  *

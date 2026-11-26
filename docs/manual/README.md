@@ -477,20 +477,23 @@ Server 頂部工具列可切換 **TCP** 與 **RTU** 模式：
 
 畫面右側兩個面板分別為 **Input Registers** 與 **Holding Registers**。點擊面板標題列右側的 `+` 按鈕開啟 **Add Input Register** / **Add Holding Register** 對話框；點擊既有暫存器列右側的鉛筆按鈕則開啟 **Edit** 對話框。
 
-#### 固定值（Fixed）與隨機產生器（Generator）
+#### 固定值（Fixed）、隨機產生器（Generator）與遞增/遞減（Ramp）
 
-| 固定值模式（Fixed） | 產生器模式（Generator） |
-| :---: | :---: |
-| ![新增固定值暫存器](./images/add-register-uint16-fixed.png) | ![新增產生器暫存器](./images/add-register-float-generator.png) |
+| 固定值模式（Fixed） | 產生器模式（Generator） | 遞增/遞減模式（Ramp） |
+| :---: | :---: | :---: |
+| ![新增固定值暫存器](./images/add-register-uint16-fixed.png) | ![新增產生器暫存器](./images/add-register-float-generator.png) | ![新增 Ramp 暫存器](./images/add-register-uint16-ramp.png) |
 
 | 欄位 / 按鈕 | 顯示條件與範圍 | 說明 |
 | --- | --- | --- |
-| **Fixed / Generator** | 除 `UTF-8` 與 `BITMAP` 外皆顯示 | 選擇固定數值或定時動態更新。`UTF-8` 與 `BITMAP` 強制為 `Fixed`。 |
+| **Fixed / Generator / Ramp** | 除 `UTF-8` 與 `BITMAP` 外皆顯示；`UNIX` 與 `DATETIME` 不顯示 **Ramp** | 選擇固定數值、隨機更新，或依固定步進遞增/遞減。`UTF-8` 與 `BITMAP` 強制為 `Fixed`。在 **Ramp** 下把型別換成 `UNIX` 或 `DATETIME`，會退回 **Generator**。 |
 | **Address** | `0`–`65535` | 起始 PDU 位址。若與既有暫存器重疊會標紅並顯示 `In use`；若起始位址加上型別寬度超出 `65535` 則顯示 `Data type does not fit at this address`。 |
 | **Data Type** | 12 種資料型別 | 選擇暫存器編碼型別。 |
 | **Value** | 數值型別 + `Fixed` | 輸入符合該型別範圍的固定數值。 |
-| **Min Value / Max Value** | 數值型別 + `Generator` | 產生器隨機數值的下限與上限（含小數，針對整數型別會取整）。 |
-| **Interval (s)** | `Generator` 模式（`1`–`3600` 秒） | 產生器每隔幾秒更新一次數值。 |
+| **Min Value / Max Value** | 數值型別 + `Generator` 或 `Ramp` | `Generator`：隨機數值的下限與上限（含小數，針對整數型別會取整）。`Ramp`：數值的界限，Min 不可大於 Max。兩種模式共用這兩格，切換時保留已輸入的值。 |
+| **Start** | 數值型別 + `Ramp`（預設 `0`） | Ramp 的初始值，須介於 Min 與 Max 之間。新增或編輯後，暫存器從這個值開始。 |
+| **Step** | 數值型別 + `Ramp`（預設 `1`） | 每個間隔加上的步進。正數遞增，負數遞減，不可為 `0`。整數型別只接受整數。 |
+| **Restart** | 數值型別 + `Ramp`（預設勾選） | 下一個值越過 Min 或 Max 時：勾選則回到 Start 重新開始；不勾選則停在最後一個界內的值，不再更新。 |
+| **Interval (s)** | `Generator` 或 `Ramp` 模式（`1`–`3600` 秒） | 每隔幾秒更新一次數值。 |
 | **String Value / Registers** | `UTF-8` 型別（長度 `1`–`124`，預設 `10`） | 輸入字串內容與佔用的暫存器數量（每暫存器 2 bytes，下方即時顯示 `<目前已用> / <上限> bytes`）。 |
 | **Date & Time / UTC** | `UNIX` 或 `DATETIME` + `Fixed` | 選擇固定時間；點擊 **UTC** 按鈕切換以本機時區或 UTC 顯示選擇器（底層暫存器永遠以 UTC 編碼）。 |
 | **Comment** | 任意文字 | 暫存器註解。 |

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 // The point table tools as an MCP client sees them, over the SDK's in-memory
 // transport, with the client and the renderer commands stood in for.
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   byteOrderFlags,
   createRegisters,
@@ -11,6 +11,8 @@ import {
   ServerValues
 } from '@shared'
 import { WRITES_NOT_ALLOWED } from '../registry'
+import { ValueGenerator } from '../../modbusServer/valueGenerator'
+import type { Windows } from '../../../windows'
 import { CommandAnswers, connectInMemory, fakeContext, jsonOf, textOf } from './fakeContext'
 
 const SERVERS: ServerList = {
@@ -597,6 +599,84 @@ describe('server_apply_point_table', () => {
     })
   })
 
+  // A random generator between 20 and 80 is also accepted, so the report
+  // has to carry the ramp's own fields.
+  it('reports a ramp point accepted on a dry run, resolved as a ramp', async () => {
+    const context = serverContext()
+    const client = await connectInMemory(context)
+
+    const result = await client.callTool({
+      name: 'server_apply_point_table',
+      arguments: {
+        port: 503,
+        dryRun: true,
+        points: [
+          {
+            name: 'Humidity',
+            address: 0,
+            registerType: 'holding_registers',
+            dataType: 'uint16',
+            generator: { mode: 'ramp', start: 80, step: -1, min: 20, max: 80, restart: true }
+          }
+        ]
+      }
+    })
+
+    expect(commandNames(context)).toEqual(['server_list'])
+    expect(jsonOf(result)).toMatchObject({
+      dryRun: true,
+      report: {
+        accepted: 1,
+        rejected: 0,
+        points: [
+          {
+            status: 'accepted',
+            resolved: {
+              generator: { mode: 'ramp', start: 80, step: -1, min: 20, max: 80, restart: true }
+            }
+          }
+        ]
+      }
+    })
+  })
+
+  it('refuses a scaled double ramp step that 7 raw decimals cannot hold, naming the resolution', async () => {
+    const context = serverContext()
+    const client = await connectInMemory(context)
+
+    const result = await client.callTool({
+      name: 'server_apply_point_table',
+      arguments: {
+        port: 503,
+        points: [
+          {
+            name: 'Energy',
+            address: 0,
+            registerType: 'holding_registers',
+            dataType: 'double',
+            scalingFactor: 1e7,
+            generator: { mode: 'ramp', start: 0, step: 1.49, min: 0, max: 4.47, restart: false }
+          }
+        ]
+      }
+    })
+
+    expect(commandNames(context)).toEqual(['server_list'])
+    expect(jsonOf(result)).toMatchObject({
+      report: {
+        accepted: 0,
+        rejected: 1,
+        points: [
+          {
+            status: 'rejected',
+            reason:
+              'Ramp step: 1.49 is not a multiple of the resolution of 1 this scaling gives a double, which keeps a ramp within a tenth of a step for 0 steps, and this one asks for 3'
+          }
+        ]
+      }
+    })
+  })
+
   it("sends the accepted points to the unit the server shows, in the table's byte order", async () => {
     const context = serverContext({
       server_apply_point_table: async () => ({ ...SIM_VALUES, byteOrder: 'CDAB' })
@@ -619,6 +699,127 @@ describe('server_apply_point_table', () => {
     expect(payload.units['2']?.holding_registers[0]?.params).toMatchObject({ value: 2305 })
     expect(payload.units['2']?.holding_registers[2]?.params).toMatchObject({ value: -123456 })
     expect(jsonOf(result)).toMatchObject({ applied: true, byteOrder: 'CDAB', unitIds: [2] })
+  })
+
+  // 8.7 / 10 is 0.8699999999999999, and raw 0.87 reads back as 8.7.
+  it('sends a scaled double ramp the max it asked for when raw 7 decimals hold it', async () => {
+    const context = serverContext({ server_apply_point_table: async () => SIM_VALUES })
+    const client = await connectInMemory(context)
+
+    await client.callTool({
+      name: 'server_apply_point_table',
+      arguments: {
+        uuid: 'sim',
+        points: [
+          {
+            name: 'Level',
+            address: 0,
+            registerType: 'holding_registers',
+            dataType: 'double',
+            scalingFactor: 10,
+            generator: { mode: 'ramp', start: 0, step: 2.9, min: 0, max: 8.7, restart: false }
+          }
+        ]
+      }
+    })
+
+    const payload = sentPayload(context, 'server_apply_point_table') as {
+      units: Record<string, { holding_registers: Record<string, { params: unknown }> }>
+    }
+    const [unit] = Object.values(payload.units)
+    expect(unit?.holding_registers[0]?.params).toMatchObject({
+      mode: 'ramp',
+      start: 0,
+      step: 0.29,
+      min: 0,
+      max: 0.87
+    })
+  })
+
+  describe('a ramp the server then runs', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    // Raw step 0.1666667 three times is 0.5000001, past a raw max of 0.5
+    // rounded alone, so the register held 0.2 where 0.3 was asked for.
+    it('holds 0, 0.1, 0.2 and 0.3 on a double ramp under a factor of 0.6, then holds', async () => {
+      const context = serverContext({ server_apply_point_table: async () => SIM_VALUES })
+      const client = await connectInMemory(context)
+
+      await client.callTool({
+        name: 'server_apply_point_table',
+        arguments: {
+          uuid: 'sim',
+          points: [
+            {
+              name: 'Level',
+              address: 0,
+              registerType: 'holding_registers',
+              dataType: 'double',
+              scalingFactor: 0.6,
+              generator: { mode: 'ramp', start: 0, step: 0.1, min: 0, max: 0.3, restart: false }
+            }
+          ]
+        }
+      })
+
+      const payload = sentPayload(context, 'server_apply_point_table') as {
+        units: Record<string, { holding_registers: Record<string, { params: unknown }> }>
+      }
+      const [unit] = Object.values(payload.units)
+      const params = unit?.holding_registers[0]?.params as {
+        min: number
+        max: number
+        interval: number
+        start: number
+        step: number
+        restart: boolean
+      }
+
+      vi.useFakeTimers()
+      const serverData = {
+        coils: new Map(),
+        discrete_inputs: new Map(),
+        input_registers: new Map(),
+        holding_registers: new Map<number, number>()
+      }
+      const generator = new ValueGenerator({
+        uuid: 'sim',
+        unitId: '1',
+        windows: { send: vi.fn() } as unknown as Windows,
+        serverData,
+        order: byteOrderFlags('ABCD'),
+        address: 0,
+        registerType: 'holding_registers',
+        dataType: 'double',
+        comment: '',
+        mode: 'ramp',
+        min: params.min,
+        max: params.max,
+        interval: params.interval,
+        start: params.start,
+        step: params.step,
+        restart: params.restart
+      })
+
+      /** The register's double, ABCD, in engineering units. */
+      const engineeringAt0 = (): number => {
+        const bytes = Buffer.alloc(8)
+        for (let word = 0; word < 4; word++) {
+          bytes.writeUInt16BE(serverData.holding_registers.get(word) ?? 0, 2 * word)
+        }
+        return Number((bytes.readDoubleBE(0) * 0.6).toFixed(6))
+      }
+      const seen = [engineeringAt0()]
+      for (let tick = 0; tick < 4; tick++) {
+        vi.advanceTimersByTime(params.interval)
+        seen.push(engineeringAt0())
+      }
+      generator.dispose()
+
+      expect(seen).toEqual([0, 0.1, 0.2, 0.3, 0.3])
+    })
   })
 
   it('sends to the unit the input names', async () => {
@@ -717,6 +918,54 @@ describe('server_get_values', () => {
           registers: [{ registerType: 'discrete_inputs', address: 0, value: false }]
         }
       ]
+    })
+  })
+
+  it('answers a ramp register with its mode, start, step and restart in raw values', async () => {
+    const context = serverContext({
+      server_get_values: async () => ({
+        ...SIM_VALUES,
+        units: {
+          '2': {
+            coils: {},
+            discrete_inputs: {},
+            input_registers: {},
+            holding_registers: {
+              6: {
+                value: 7,
+                params: {
+                  address: 6,
+                  registerType: 'holding_registers',
+                  dataType: 'uint16',
+                  comment: 'Level',
+                  min: 0,
+                  max: 10,
+                  interval: 1000,
+                  mode: 'ramp',
+                  start: 5,
+                  step: -1,
+                  restart: false
+                }
+              }
+            }
+          }
+        }
+      })
+    })
+    context.setServerWords('sim', '2', 'holding_registers', 6, [7])
+    const client = await connectInMemory(context)
+
+    const result = await client.callTool({ name: 'server_get_values', arguments: { port: 503 } })
+
+    const [unit] = jsonOf(result).units as { registers: { generator?: unknown }[] }[]
+    expect(unit?.registers[0]?.generator).toEqual({
+      min: 0,
+      max: 10,
+      intervalMs: 1000,
+      mode: 'ramp',
+      start: 5,
+      step: -1,
+      restart: false
     })
   })
 
@@ -874,6 +1123,54 @@ describe('server_set_values', () => {
       '"ABCDE" is 5 bytes, and 2 registers hold 4',
       'A utf8 value is a string'
     ])
+  })
+
+  it('refuses a register a ramp drives, as it does one a random generator drives', async () => {
+    const context = serverContext({
+      server_get_values: async () => ({
+        ...SIM_VALUES,
+        units: {
+          '2': {
+            coils: {},
+            discrete_inputs: {},
+            input_registers: {},
+            holding_registers: {
+              6: {
+                value: 7,
+                params: {
+                  address: 6,
+                  registerType: 'holding_registers',
+                  dataType: 'uint16',
+                  comment: 'Level',
+                  min: 0,
+                  max: 10,
+                  interval: 1000,
+                  mode: 'ramp',
+                  start: 5,
+                  step: 1,
+                  restart: true
+                }
+              }
+            }
+          }
+        }
+      })
+    })
+    const client = await connectInMemory(context)
+
+    const result = await client.callTool({
+      name: 'server_set_values',
+      arguments: {
+        port: 503,
+        values: [{ address: 6, registerType: 'holding_registers', value: 3 }]
+      }
+    })
+
+    const answer = jsonOf(result) as { accepted: number; values: { reason?: string }[] }
+    expect(answer.values.map((value) => value.reason)).toEqual([
+      'The register at 6 is driven by a generator; apply a point table to fix its value'
+    ])
+    expect(answer.accepted).toBe(0)
   })
 
   it("reports a value the window did not set as rejected, with the window's reason", async () => {

@@ -2,6 +2,7 @@ export type { MigrationResult } from './types'
 export {
   formatZodError,
   repairPersistedParity,
+  dropRefusedPersistedRamps,
   dropUnservableRegisters,
   dropUnmappableRegisters
 } from './shared'

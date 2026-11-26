@@ -5,6 +5,7 @@ import {
   engineeringToRaw,
   Point,
   pointComment,
+  PointGeneratorSchema,
   PointSchema,
   readWindowOf,
   resolveAddress,
@@ -14,7 +15,8 @@ import {
   validatePointTable
 } from '../pointTable'
 import { scaleValue } from '../engineeringValue'
-import { DataType } from '../types'
+import { nextRampTick } from '../ramp'
+import { DataType, RegisterParamsSchema } from '../types'
 
 const point = (fields: Partial<Point> & Pick<Point, 'address'>): Point => ({
   name: `P${fields.address}`,
@@ -642,6 +644,598 @@ describe('validatePointTable, server values', () => {
       undefined,
       'A datetime generator reads the clock and takes no min or max'
     ])
+  })
+
+  describe('a ramp generator', () => {
+    // It said a whole raw step for every type, and an unscaled double takes 0.5.
+    it('describes the raw rules of a ramp step and start per data type', () => {
+      const description = PointGeneratorSchema.shape.step.description
+      expect(description).toContain('On an integer type the raw step is whole')
+      expect(description).toContain('7 raw decimals')
+      expect(description).toContain('more than a tenth of a step from the values asked for')
+      expect(PointGeneratorSchema.shape.start.description).toContain(
+        'refused if that moves it by more than a tenth of a step'
+      )
+      const report = validatePointTable(
+        [
+          serverPoint({
+            address: 0,
+            dataType: 'double',
+            generator: { mode: 'ramp', start: 0, step: 0.5, min: 0, max: 3 }
+          })
+        ],
+        { target: 'server' }
+      )
+      expect(report.points[0]?.resolved?.generator?.step).toBe(0.5)
+    })
+
+    const ramp = { mode: 'ramp', start: 0, step: 1, min: 0, max: 100 } as const
+    const resolve = (fields: Partial<ServerPoint>): ReturnType<typeof validatePointTable> =>
+      validatePointTable([serverPoint({ address: 0, ...fields })], { target: 'server' })
+
+    it('stores the ramp in raw values, restart on by default', () => {
+      const report = resolve({ generator: ramp })
+      expect(report.points[0]?.resolved?.generator).toEqual({
+        min: 0,
+        max: 100,
+        intervalMs: 1000,
+        mode: 'ramp',
+        start: 0,
+        step: 1,
+        restart: true
+      })
+    })
+
+    it('keeps restart: false', () => {
+      const report = resolve({ generator: { ...ramp, restart: false, intervalSeconds: 2 } })
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        intervalMs: 2000,
+        restart: false
+      })
+    })
+
+    it('scales start, step, min and max into raw values', () => {
+      const report = resolve({
+        scalingFactor: 0.1,
+        generator: { mode: 'ramp', start: 80, step: -0.5, min: 20, max: 80 }
+      })
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        start: 800,
+        step: -5,
+        min: 200,
+        max: 800
+      })
+    })
+
+    it('turns the direction around under a negative scaling factor', () => {
+      const report = resolve({
+        dataType: 'int16',
+        scalingFactor: -1,
+        generator: { mode: 'ramp', start: 10, step: 1, min: 1, max: 50 }
+      })
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        start: -10,
+        step: -1,
+        min: -50,
+        max: -1
+      })
+    })
+
+    it('resolves a generator with no mode exactly as before', () => {
+      const report = resolve({ generator: { min: 0, max: 10 } })
+      expect(report.points[0]?.resolved?.generator).toStrictEqual({
+        min: 0,
+        max: 10,
+        intervalMs: 1000
+      })
+    })
+
+    it('resolves mode random as a random generator', () => {
+      const report = resolve({ generator: { mode: 'random', min: 0, max: 10 } })
+      expect(report.points[0]?.resolved?.generator).toStrictEqual({
+        min: 0,
+        max: 10,
+        intervalMs: 1000
+      })
+    })
+
+    it('hands the schema a ramp it accepts', () => {
+      const [entry] = resolve({ generator: ramp, comment: 'Energy' }).points
+      const resolved = entry?.resolved
+      if (!resolved) throw new Error('the ramp was rejected')
+      const params = serverRegisterParams(resolved)
+      expect(RegisterParamsSchema.safeParse(params).success).toBe(true)
+      expect(params).toMatchObject({ mode: 'ramp', start: 0, step: 1, restart: true })
+    })
+
+    it.each([
+      [
+        { dataType: 'uint16', generator: { mode: 'ramp', start: 0, min: 0, max: 10 } },
+        'A ramp needs a start, a step, a min and a max'
+      ],
+      [
+        { dataType: 'uint16', generator: { mode: 'ramp', start: 0, step: 1, min: 0 } },
+        'A ramp needs a start, a step, a min and a max'
+      ],
+      [{ dataType: 'unix', generator: ramp }, 'A unix generator reads the clock and cannot ramp'],
+      [
+        { dataType: 'datetime', generator: ramp },
+        'A datetime generator reads the clock and cannot ramp'
+      ],
+      [
+        { dataType: 'uint16', generator: { ...ramp, start: -1 } },
+        'Ramp start: Raw value -1: A uint16 value has to be between 0 and 65535'
+      ],
+      [{ dataType: 'uint16', generator: { ...ramp, step: 0 } }, 'The ramp step is 0 after scaling'],
+      [
+        { dataType: 'uint16', generator: { ...ramp, start: 11, max: 10 } },
+        'The ramp start has to be between its min and max'
+      ],
+      [
+        { dataType: 'uint16', generator: { min: 0, max: 10, start: 1 } },
+        'start, step and restart belong to a ramp; set mode to "ramp"'
+      ],
+      [
+        { dataType: 'uint16', generator: { mode: 'random', min: 0, max: 10, step: 1 } },
+        'start, step and restart belong to a ramp; set mode to "ramp"'
+      ],
+      [
+        { dataType: 'uint16', generator: { min: 0, max: 10, restart: false } },
+        'start, step and restart belong to a ramp; set mode to "ramp"'
+      ]
+    ] as const)('rejects %j', (fields, reason) => {
+      expect(reasons(resolve(fields))).toEqual([reason])
+    })
+
+    // `start + step` is 65536, which a uint16 cannot hold, and was checked as
+    // a value to write. The ramp writes 65535 and holds on its first tick.
+    it('accepts a uint16 ramp whose start sits on the bound its step walks toward', () => {
+      const report = resolve({
+        dataType: 'uint16',
+        generator: { mode: 'ramp', start: 65535, step: 1, min: 0, max: 65535, restart: false }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({ start: 65535, step: 1 })
+    })
+
+    it.each([
+      ['uint16', { scalingFactor: 2 }, 0.1, 2],
+      ['uint16', { scalingFactor: 2 }, 3, 2],
+      ['int16', { scalingFactor: -2 }, 3, 2],
+      ['uint16', { interpolate: { x1: 0, x2: 10, y1: 0, y2: 100 } }, 5, 10]
+    ] as const)(
+      'names the resolution a %s under %j gives when a step of %d is not a whole raw step',
+      (dataType, scaling, step, resolution) => {
+        const report = resolve({
+          dataType,
+          ...scaling,
+          generator: { mode: 'ramp', start: 20, step, min: 0, max: 100 }
+        })
+        expect(reasons(report)).toEqual([
+          `Ramp step: ${step} is smaller than, or not a multiple of, the resolution of ${resolution} this scaling gives a ${dataType}`
+        ])
+      }
+    )
+
+    it('names the resolution when a step rounds to 0 raw beside a large start', () => {
+      const report = resolve({
+        dataType: 'uint32',
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 4e9, step: 1, min: 0, max: 4e10 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1 is smaller than, or not a multiple of, the resolution of 10 this scaling gives a uint32'
+      ])
+    })
+
+    // `80 + -0.1 - 80` is -0.09999999999999432, which the schema refuses for
+    // its decimals, so a raw step taken as a difference fails these.
+    it.each([
+      ['float', {}, { start: 80, step: -0.1, min: 20, max: 80 }, -0.1],
+      ['double', {}, { start: 80, step: -0.1, min: 20, max: 80 }, -0.1],
+      ['float', {}, { start: 0.1, step: 0.2, min: 0, max: 1 }, 0.2],
+      ['double', {}, { start: 0.1, step: 0.2, min: 0, max: 1 }, 0.2],
+      ['float', { scalingFactor: 0.1 }, { start: 0, step: 0.3, min: 0, max: 1 }, 3],
+      ['double', { scalingFactor: 0.1 }, { start: 0, step: 0.3, min: 0, max: 1 }, 3],
+      ['float', { scalingFactor: 0.1 }, { start: 80, step: -0.1, min: 20, max: 80 }, -1],
+      ['double', { scalingFactor: -0.1 }, { start: 0.1, step: 0.2, min: 0, max: 1 }, -2],
+      [
+        'double',
+        { interpolate: { x1: 0, x2: 10, y1: 0.1, y2: 0.4 } },
+        { start: 0.1, step: 0.03, min: 0.1, max: 0.4 },
+        1
+      ]
+    ] as const)(
+      'accepts a %s ramp under %j with %j, stepping %d raw',
+      (dataType, scaling, generator, rawStep) => {
+        const report = resolve({ dataType, ...scaling, generator: { mode: 'ramp', ...generator } })
+        expect(reasons(report)).toEqual([undefined])
+        expect(report.points[0]?.resolved?.generator?.step).toBe(rawStep)
+      }
+    )
+
+    // 20 / 0.3 is 66.66666666666667, past the 7 decimals the schema holds a
+    // float ramp to. 10 / 0.3 rounds up and 40 / 0.3 down, so 0.3 times
+    // either is inside 10 to 40.
+    it.each(['float', 'double'] as const)(
+      'rounds the raw start of a scaled %s ramp to the decimals the schema takes, and its bounds inward',
+      (dataType) => {
+        const report = resolve({
+          dataType,
+          scalingFactor: 0.3,
+          generator: { mode: 'ramp', start: 20, step: 0.3, min: 10, max: 40 }
+        })
+        expect(reasons(report)).toEqual([undefined])
+        expect(report.points[0]?.resolved?.generator).toMatchObject({
+          start: 66.6666667,
+          step: 1,
+          min: 33.3333334,
+          max: 133.3333333
+        })
+      }
+    )
+
+    it('refuses an unscaled float ramp step with more decimals than the schema takes', () => {
+      const report = resolve({
+        dataType: 'float',
+        generator: { mode: 'ramp', start: 0, step: 0.123456789, min: 0, max: 1 }
+      })
+      expect(reasons(report)[0]).toMatch(/at most 7 decimals/)
+    })
+
+    it('rejects a step finer than the scaling resolution with the step reason', () => {
+      const report = resolve({
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 0, step: 1, min: 0, max: 1000 }
+      })
+      expect(reasons(report)[0]).toMatch(/^Ramp step: /)
+    })
+
+    // A step measured as `unscale(start + step)` is measured beside 1e9.
+    it('names the resolution of a uint32 step of 1.25 beside a start of 1e9', () => {
+      const report = resolve({
+        dataType: 'uint32',
+        generator: { mode: 'ramp', start: 1e9, step: 1.25, min: 1e9, max: 1e9 + 10 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1.25 is smaller than, or not a multiple of, the resolution of 1 this scaling gives a uint32'
+      ])
+    })
+
+    // 1e-9 of the value, which `isWhole` takes, is 1 at 1e9.
+    it('names the resolution of an unscaled uint32 step of 1000000000.25', () => {
+      const report = resolve({
+        dataType: 'uint32',
+        generator: { mode: 'ramp', start: 0, step: 1000000000.25, min: 0, max: 2e9 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1000000000.25 is smaller than, or not a multiple of, the resolution of 1 this scaling gives a uint32'
+      ])
+    })
+
+    it.each([
+      [{ start: 1000000000.25, min: 0, max: 1e9 }, 'Ramp start', 1000000000.25],
+      [{ start: 1e9, min: 0.25, max: 2e9 }, 'Generator min', 0.25],
+      [{ start: 0, min: 0, max: 1000000000.25 }, 'Generator max', 1000000000.25]
+    ])('refuses an unscaled uint32 ramp with %j as a fraction', (bounds, label, value) => {
+      const report = resolve({
+        dataType: 'uint32',
+        generator: { mode: 'ramp', step: 1, ...bounds }
+      })
+      expect(reasons(report)).toEqual([
+        `${label}: Engineering value ${value} is raw ${value}, and a uint32 holds whole numbers`
+      ])
+    })
+
+    // 0.3 / 0.1 is 2.9999999999999996.
+    it('accepts a uint32 ramp whose scaled start and step miss a whole raw value by rounding', () => {
+      const report = resolve({
+        dataType: 'uint32',
+        scalingFactor: 0.1,
+        generator: { mode: 'ramp', start: 0.3, step: 0.3, min: 0.3, max: 1000 }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({ start: 3, step: 3, min: 3 })
+    })
+
+    // `unscale(1e16 + 1)` is `unscale(1e16)`, because doubles there are 2
+    // apart, so the step was taken for 0 raw.
+    it('accepts a uint16 step of 1 under an interpolation whose engineering values sit at 1e16', () => {
+      const report = resolve({
+        dataType: 'uint16',
+        interpolate: { x1: 0, x2: 10, y1: 1e16, y2: 1e16 + 10 },
+        generator: { mode: 'ramp', start: 1e16, step: 1, min: 1e16, max: 1e16 + 10 }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({ start: 0, step: 1, max: 10 })
+    })
+
+    it('names the resolution of a uint16 step of 1e-10', () => {
+      const report = resolve({
+        dataType: 'uint16',
+        generator: { mode: 'ramp', start: 0, step: 1e-10, min: 0, max: 10 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1e-10 is smaller than, or not a multiple of, the resolution of 1 this scaling gives a uint16'
+      ])
+    })
+
+    // Raw start 0.10000001 and raw max 0.1 both round to 0.1 at 7 decimals.
+    it('rejects a scaled double start past max before rounding takes it back inside', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 1.0000001, step: -1, min: 0, max: 1 }
+      })
+      expect(reasons(report)).toEqual(['The ramp start has to be between its min and max'])
+    })
+
+    it('accepts a scaled double start on max, rounded with it', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 0.3,
+        generator: { mode: 'ramp', start: 40, step: -0.3, min: 10, max: 40 }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        start: 133.3333333,
+        max: 133.3333333
+      })
+    })
+
+    // Raw max 1.6e-7 rounded to the nearest 7 decimals is 2e-7, which writes
+    // an engineering 4e-7 on the second step.
+    it.each([
+      [
+        { start: 0, min: 0, max: 3.2e-7 },
+        { start: 0, min: 0, max: 1e-7 }
+      ],
+      [
+        { start: 0, min: -3.2e-7, max: 0 },
+        { start: 0, min: -1e-7, max: 0 }
+      ],
+      [
+        { start: 0.6, min: 0.6, max: 4.2 },
+        { start: 0.3, min: 0.3, max: 2.1 }
+      ]
+    ])('keeps a scaled double ramp with %j inside its bounds as %j raw', (bounds, raw) => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 2,
+        generator: { mode: 'ramp', step: 2e-7, restart: false, ...bounds }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({ ...raw, step: 1e-7 })
+    })
+
+    // Raw 1.49e-7 rounds to 1e-7, so the first value written was 1 where 1.49
+    // was asked for. Raw 1.6e-7 on max is rounded inward with max to 1e-7.
+    it.each([
+      [1e7, { start: 1.49, step: 1, min: 0, max: 10 }, 1],
+      [2, { start: 3.2e-7, step: 2e-7, min: 0, max: 3.2e-7 }, 2e-7]
+    ])(
+      'names the resolution of a scaled double start that 7 raw decimals move, under %d with %j',
+      (scalingFactor, generator, resolution) => {
+        const report = resolve({
+          dataType: 'double',
+          scalingFactor,
+          generator: { mode: 'ramp', restart: false, ...generator }
+        })
+        expect(reasons(report)).toEqual([
+          `Ramp start: ${generator.start} is not a multiple of the resolution of ${resolution} this scaling gives a double`
+        ])
+      }
+    )
+
+    // 8.7 / 10 is 0.8699999999999999 and 0.3 / 0.1 is 2.9999999999999996, a
+    // float error of the division that raw 0.87 and raw 3 read back across.
+    it.each([
+      [
+        'double',
+        10,
+        { start: 0, step: 2.9, min: 0, max: 8.7 },
+        { start: 0, step: 0.29, min: 0, max: 0.87 }
+      ],
+      [
+        'double',
+        0.1,
+        { start: 0, step: 0.1, min: 0, max: 0.3 },
+        { start: 0, step: 1, min: 0, max: 3 }
+      ],
+      [
+        'float',
+        0.1,
+        { start: 0, step: 0.1, min: 0, max: 0.3 },
+        { start: 0, step: 1, min: 0, max: 3 }
+      ],
+      [
+        'double',
+        -0.1,
+        { start: 0, step: 0.1, min: 0, max: 0.3 },
+        { start: 0, step: -1, min: -3, max: 0 }
+      ],
+      [
+        'float',
+        -0.1,
+        { start: 0, step: 0.1, min: 0, max: 0.3 },
+        { start: 0, step: -1, min: -3, max: 0 }
+      ],
+      [
+        'double',
+        0.1,
+        { start: 0.3, step: 0.1, min: 0.3, max: 0.3 },
+        { start: 3, step: 1, min: 3, max: 3 }
+      ],
+      [
+        'double',
+        100,
+        { start: 0.0011, step: 0.001, min: 0.0011, max: 0.01 },
+        { start: 0.000011, step: 0.00001, min: 0.000011, max: 0.0001 }
+      ]
+    ] as const)(
+      'keeps the bounds of a %s ramp under a factor of %d with %j where their raw value reads back as them',
+      (dataType, scalingFactor, generator, raw) => {
+        const report = resolve({
+          dataType,
+          scalingFactor,
+          generator: { mode: 'ramp', restart: false, ...generator }
+        })
+        expect(reasons(report)).toEqual([undefined])
+        expect(report.points[0]?.resolved?.generator).toMatchObject(raw)
+      }
+    )
+
+    it('keeps the bounds of a float ramp under a factor of 0.001 and an offset of 1.5', () => {
+      const report = resolve({
+        dataType: 'float',
+        scalingFactor: 0.001,
+        interpolate: { x1: 0, x2: 1, y1: 1.5, y2: 2.5 },
+        generator: { mode: 'ramp', start: 0, step: 0.3, min: 0, max: 1.2, restart: false }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator).toMatchObject({
+        start: -1500,
+        step: 300,
+        min: -1500,
+        max: -300
+      })
+    })
+
+    // Raw step 0.1666667 three times is 0.5000001, past a raw max of 0.5 rounded
+    // alone, so the ramp held one step short of 0.3. Falling by raw
+    // 9.6666667 from 29, tick 3 is -0.0000001, below a raw min of 0.
+    it.each([
+      ['float', 0.6, { start: 0, step: 0.1, min: 0, max: 0.3 }, [0, 0.1, 0.2, 0.3]],
+      ['double', 0.6, { start: 0, step: 0.1, min: 0, max: 0.3 }, [0, 0.1, 0.2, 0.3]],
+      ['double', 0.3, { start: 8.7, step: -2.9, min: 0, max: 8.7 }, [8.7, 5.8, 2.9, 0]]
+    ] as const)(
+      'writes every step a %s ramp under a factor of %d with %j asks for',
+      (dataType, scalingFactor, generator, asked) => {
+        const report = resolve({
+          dataType,
+          scalingFactor,
+          generator: { mode: 'ramp', restart: false, ...generator }
+        })
+        expect(reasons(report)).toEqual([undefined])
+        const resolved = report.points[0]?.resolved?.generator
+        if (resolved?.start === undefined || resolved.step === undefined) {
+          throw new Error('the ramp was not resolved')
+        }
+        const spec = { ...resolved, start: resolved.start, step: resolved.step, restart: false }
+        const engineering = [resolved.start * scalingFactor]
+        for (let stepCount = 0; ; ) {
+          const tick = nextRampTick(spec, stepCount)
+          if (tick.kind === 'hold') break
+          engineering.push(tick.value * scalingFactor)
+          stepCount = tick.stepCount
+        }
+        expect(engineering.map((value) => Number(value.toFixed(6)) + 0)).toEqual(asked)
+      }
+    )
+
+    // Raw step 0.0333333 lags 0.01 / 0.3 by about 1e-8 in engineering units,
+    // a tenth of a step after about 100000 steps.
+    it('refuses a scaled double counter longer than a tenth of a step of drift, naming both counts', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 0.3,
+        generator: { mode: 'ramp', start: 0, step: 0.01, min: 0, max: 10000 }
+      })
+      expect(reasons(report)).toEqual([
+        `Ramp step: 0.01 is not a multiple of the resolution of ${0.3 / 10 ** 7} this scaling gives a double, which keeps a ramp within a tenth of a step for 99999 steps, and this one asks for 1000000`
+      ])
+    })
+
+    // Raw step 0.3333333 lags 0.1 / 0.3, so raw tick 4 is 1.3333332, inside a
+    // raw max of 1.3333333, and writes 0.39999996 after the 0.3 asked for last.
+    it('refuses a scaled double ramp whose raw ticks take a step more than asked for', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 0.3,
+        generator: { mode: 'ramp', start: 0, step: 0.1, min: 0, max: 0.39999999, restart: false }
+      })
+      expect(reasons(report)).toEqual([
+        `Ramp step: 0.1 reaches 0.39999999 in 3 steps, and at the resolution of ${0.3 / 10 ** 7} this scaling gives a double the raw ramp takes another`
+      ])
+    })
+
+    // Raw start 0.100000049 rounds to 0.1, which is engineering 0: about half
+    // a step from the 0.000049 asked for.
+    it.each(['float', 'double'] as const)(
+      'names the resolution of a %s start that 7 raw decimals move by half a step under an offset',
+      (dataType) => {
+        const report = resolve({
+          dataType,
+          scalingFactor: 1000,
+          interpolate: { x1: 0, x2: 1, y1: -100, y2: -99 },
+          generator: { mode: 'ramp', start: 0.000049, step: 0.0001, min: 0, max: 1, restart: false }
+        })
+        expect(reasons(report)).toEqual([
+          `Ramp start: 0.000049 is not a multiple of the resolution of 0.0001 this scaling gives a ${dataType}`
+        ])
+      }
+    )
+
+    it('refuses a scaled double ramp whose bounds hold no raw value at 7 decimals', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 2,
+        generator: { mode: 'ramp', start: 1.2e-7, step: 2e-7, min: 1.2e-7, max: 1.6e-7 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp min 1.2e-7 and max 1.6e-7 hold no raw value at 7 decimals under this scaling'
+      ])
+    })
+
+    // Raw 1e-8 rounds to 0 at 7 decimals, and the reason read as if the step
+    // given were 0.
+    it('names the resolution of a float step that rounds to 0 raw under a scaling', () => {
+      const report = resolve({
+        dataType: 'float',
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 0, step: 1e-7, min: 0, max: 1 }
+      })
+      expect(reasons(report)).toEqual([
+        'Ramp step: 1e-7 is smaller than the resolution of 0.000001 this scaling gives a float'
+      ])
+    })
+
+    // Raw 1.49e-7 rounds to 1e-7 at 7 decimals, so the register stepped by 1
+    // engineering unit where 1.49 was asked for.
+    it.each(['float', 'double'] as const)(
+      'names the resolution of a scaled %s step that 7 raw decimals cannot hold',
+      (dataType) => {
+        const report = resolve({
+          dataType,
+          scalingFactor: 1e7,
+          generator: { mode: 'ramp', start: 0, step: 1.49, min: 0, max: 4.47, restart: false }
+        })
+        expect(reasons(report)).toEqual([
+          `Ramp step: 1.49 is not a multiple of the resolution of 1 this scaling gives a ${dataType}, which keeps a ramp within a tenth of a step for 0 steps, and this one asks for 3`
+        ])
+      }
+    )
+
+    // 0.1 / 0.3 is 0.33333333333333337, which 7 decimals move by about 1e-7
+    // of itself.
+    it('accepts a scaled double step whose raw value 7 decimals round by a part in 1e7', () => {
+      const report = resolve({
+        dataType: 'double',
+        scalingFactor: 0.3,
+        generator: { mode: 'ramp', start: 0, step: 0.1, min: 0, max: 3 }
+      })
+      expect(reasons(report)).toEqual([undefined])
+      expect(report.points[0]?.resolved?.generator?.step).toBe(0.3333333)
+    })
+
+    it('answers a scaled float step of 0 with the step being 0', () => {
+      const report = resolve({
+        dataType: 'float',
+        scalingFactor: 10,
+        generator: { mode: 'ramp', start: 0, step: 0, min: 0, max: 1 }
+      })
+      expect(reasons(report)).toEqual(['The ramp step is 0 after scaling'])
+    })
   })
 
   it.each([

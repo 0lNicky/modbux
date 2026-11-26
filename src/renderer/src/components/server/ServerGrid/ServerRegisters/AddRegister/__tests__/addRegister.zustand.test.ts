@@ -149,3 +149,49 @@ describe('initNextUnusedAddress', () => {
     expect(state.valid.address).toBe(false)
   })
 })
+
+describe('the generator mode', () => {
+  beforeEach(() => {
+    useAddRegisterZustand.getState().resetToDefaults()
+  })
+
+  // A timestamp generator reads the clock, so a ramp on one has nothing to
+  // step and the dialog falls back to the random generator it can send.
+  it.each(['unix', 'datetime'] as const)(
+    'falls back to random when the type becomes %s',
+    (type) => {
+      const addRegisterZustand = useAddRegisterZustand.getState()
+      addRegisterZustand.setGeneratorMode('ramp')
+
+      addRegisterZustand.setDataType(type)
+
+      expect(useAddRegisterZustand.getState().generatorMode).toBe('random')
+    }
+  )
+
+  it('still forces utf8 fixed', () => {
+    const addRegisterZustand = useAddRegisterZustand.getState()
+    addRegisterZustand.setFixed(false)
+    addRegisterZustand.setGeneratorMode('ramp')
+
+    addRegisterZustand.setDataType('utf8')
+
+    expect(useAddRegisterZustand.getState().fixed).toBe(true)
+  })
+
+  it('is restored with the ramp fields by resetToDefaults', () => {
+    const addRegisterZustand = useAddRegisterZustand.getState()
+    addRegisterZustand.setGeneratorMode('ramp')
+    addRegisterZustand.setStart('7', true)
+    addRegisterZustand.setStep('-3', true)
+    addRegisterZustand.setRestart(false)
+
+    addRegisterZustand.resetToDefaults()
+
+    const state = useAddRegisterZustand.getState()
+    expect(state.generatorMode).toBe('random')
+    expect(state.start).toBe('0')
+    expect(state.step).toBe('1')
+    expect(state.restart).toBe(true)
+  })
+})

@@ -1,11 +1,18 @@
 import z from 'zod'
-import { BaseDataTypeSchema } from './datatype'
+import { BaseDataType, BaseDataTypeSchema } from './datatype'
 import { BitMapConfigSchema } from './bitmap'
 import { PortSchema, RegisterAddressKeySchema, RegisterAddressSchema } from './ranges'
 import { SerialPortOptionsSchema } from './serial'
 import { ConfigByteSwapSchema } from './byteOrder'
 import { UnitIdString, UnitIdStringSchema } from './unitid'
-import { getAddressFitError, getValueRangeError, MAX_UTF8_LENGTH } from '../encoding'
+import {
+  getRampValueError,
+  getAddressFitError,
+  getRampStepError,
+  getValueRangeError,
+  isIntegerDataType,
+  MAX_UTF8_LENGTH
+} from '../encoding'
 import {
   BooleanRegisters,
   BooleanRegistersSchema,
@@ -41,6 +48,22 @@ export const StartRtuServerParamsSchema = z.object({
 export type StartRtuServerParams = z.infer<typeof StartRtuServerParamsSchema>
 
 /**
+ * How a generator picks its next value. An absent `mode` is `random`, so a
+ * config saved before `ramp` existed reads the same.
+ *
+ * A ramp starts at `start` and adds `step` every `interval`. Past `min` or
+ * `max` it returns to `start` when `restart` is true or absent, and holds
+ * otherwise.
+ */
+export const GeneratorModeSchema = z.enum(['random', 'ramp'])
+export type GeneratorMode = z.infer<typeof GeneratorModeSchema>
+
+export const isRampParams = (params: { mode?: GeneratorMode }): boolean => params.mode === 'ramp'
+
+/** The types a ramp refuses: two clocks and three that hold no count. */
+const RAMP_REFUSED_TYPES: readonly BaseDataType[] = ['unix', 'datetime', 'utf8', 'bitmap', 'none']
+
+/**
  * What a generated register varies between, and how often.
  *
  * The interval is typed in whole seconds through a mask with a floor of 1 and
@@ -68,15 +91,20 @@ export type StartRtuServerParams = z.infer<typeof StartRtuServerParamsSchema>
  * reports it valid. And one register the schema refuses costs that register
  * now, because the store's v3 to v4 step drops it and keeps the rest.
  *
- * A min above a max is not a rule here. The dialog lets one through, and
- * `Math.random() * (max - min) + min` covers the same range either way: ten
- * thousand draws of min 100 max 10 ran 10 to 100, the same as min 10 max 100.
+ * A min above a max is not a rule for a random generator. The dialog lets one
+ * through, and `Math.random() * (max - min) + min` covers the same range either
+ * way: ten thousand draws of min 100 max 10 ran 10 to 100, the same as min 10
+ * max 100. A ramp reads the pair as bounds, so the refine below refuses it.
  */
 const RegisterParamsGeneratorPartSchema = z.object({
   min: z.number(),
   max: z.number(),
   interval: z.number().int().min(1000).max(2147483647),
-  value: z.undefined() // Explicitly forbid 'value'
+  value: z.undefined(), // Explicitly forbid 'value'
+  mode: GeneratorModeSchema.optional(),
+  start: z.number().optional(),
+  step: z.number().optional(),
+  restart: z.boolean().optional()
 })
 export type RegisterParamsGeneratorPart = z.infer<typeof RegisterParamsGeneratorPartSchema>
 
@@ -84,7 +112,11 @@ const RegisterParamsStaticPartSchema = z.object({
   value: z.number(),
   min: z.undefined(),
   max: z.undefined(),
-  interval: z.undefined()
+  interval: z.undefined(),
+  mode: z.undefined(),
+  start: z.undefined(),
+  step: z.undefined(),
+  restart: z.undefined()
 })
 
 export type RegisterValue<K extends RegisterType = RegisterType> = {
@@ -143,6 +175,12 @@ export type RegisterParamsBasePart = z.infer<typeof RegisterParamsBasePartSchema
  *
  * All three are stated where the add dialog states them, so the file and the
  * field answer the same question.
+ *
+ * A ramp writes `start` plus whole steps and stops at `min` and `max`, so it
+ * needs a nonzero `step`, a `start` between a `min` no greater than `max`, and
+ * whole numbers on an integer type. Each value it writes is then inside the
+ * range `getValueRangeError` already holds `min` and `max` to. That range is
+ * unbounded for a float, so a float ramp's bounds are held to float32 here.
  */
 export const RegisterParamsSchema = RegisterParamsBasePartSchema.and(
   z.union([RegisterParamsGeneratorPartSchema, RegisterParamsStaticPartSchema])
@@ -165,6 +203,64 @@ export const RegisterParamsSchema = RegisterParamsBasePartSchema.and(
     if (rangeError) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: rangeError })
     }
+  }
+
+  if (params.mode !== 'ramp') {
+    for (const field of ['start', 'step', 'restart'] as const) {
+      if (params[field] === undefined) continue
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: `${field} belongs to a ramp; set mode to "ramp"`
+      })
+    }
+    return
+  }
+
+  const issue = (field: string, message: string): void => {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message })
+  }
+
+  if (RAMP_REFUSED_TYPES.includes(params.dataType)) {
+    issue('mode', `A ${params.dataType} register cannot ramp`)
+  }
+
+  for (const field of ['min', 'max', 'start'] as const) {
+    const fieldValue = params[field]
+    if (fieldValue === undefined) continue
+    const valueError = getRampValueError(params.dataType, field, fieldValue)
+    if (valueError) issue(field, valueError)
+  }
+  if (params.step !== undefined && !Number.isFinite(params.step)) {
+    issue('step', 'A ramp step has to be a finite number')
+  }
+  if (params.min > params.max) issue('min', 'A ramp needs a min no greater than its max')
+  if (isIntegerDataType(params.dataType)) {
+    for (const field of ['min', 'max'] as const) {
+      if (!Number.isInteger(params[field])) {
+        issue(field, `A ${params.dataType} ramp ${field} has to be a whole number`)
+      }
+    }
+  }
+
+  const { start, step } = params
+  if (start === undefined) {
+    issue('start', 'A ramp needs a start')
+  } else if (params.min <= params.max && (start < params.min || start > params.max)) {
+    issue('start', 'A ramp start has to be between its min and max')
+  } else if (isIntegerDataType(params.dataType) && !Number.isInteger(start)) {
+    issue('start', `A ${params.dataType} ramp starts on a whole number`)
+  }
+
+  if (step === undefined) {
+    issue('step', 'A ramp needs a step')
+  } else if (step === 0) {
+    issue('step', 'A ramp step cannot be 0')
+  } else if (isIntegerDataType(params.dataType) && !Number.isInteger(step)) {
+    issue('step', `A ${params.dataType} ramp steps by a whole number`)
+  } else {
+    const stepError = getRampStepError(params.dataType, step)
+    if (stepError) issue('step', stepError)
   }
 })
 export type RegisterParams = z.infer<typeof RegisterParamsSchema>

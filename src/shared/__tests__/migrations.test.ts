@@ -550,6 +550,82 @@ describe('configMigration', () => {
         expect(message).toContain('serverRegistersPerUnit.256')
       })
     })
+
+    // Review Focus 4 of the ramp plan: a hand-edited ramp the schema refuses
+    // goes alone, where any other refused register still refuses the file.
+    describe('a ramp register the schema refuses', () => {
+      const base = { registerType: 'holding_registers', dataType: 'uint16', comment: '' }
+      const fixedAt2 = { value: 7, params: { ...base, address: 2, value: 7 } }
+      const rampAt0 = {
+        value: 0,
+        params: {
+          ...base,
+          address: 0,
+          min: 0,
+          max: 10,
+          interval: 1000,
+          mode: 'ramp',
+          start: 0,
+          step: 1
+        }
+      }
+      const rampWithoutStep = { ...rampAt0.params, step: undefined }
+      const rampWithFractionalBounds = { ...rampAt0.params, start: 1, min: 0.5, max: 4.5 }
+      const outOfRangeMinAt0 = {
+        value: 0,
+        params: { ...base, address: 0, min: -1, max: 10, interval: 1000 }
+      }
+      const configFile = (version: number, atAddress0: unknown): string =>
+        JSON.stringify({
+          version,
+          modbuxVersion: '3.0.0',
+          name: 'hand edited',
+          littleEndian: false,
+          serverRegistersPerUnit: {
+            '1': {
+              coils: {},
+              discrete_inputs: {},
+              input_registers: {},
+              holding_registers: { '0': atAddress0, '2': fixedAt2 }
+            }
+          }
+        })
+      const addresses = (raw: string): string[] =>
+        Object.keys(
+          migrateServerConfig(raw).config.serverRegistersPerUnit['1']?.holding_registers ?? {}
+        )
+
+      it.each([3, CURRENT_SERVER_CONFIG_VERSION])('keeps a valid ramp in a v%i file', (version) => {
+        expect(addresses(configFile(version, rampAt0))).toEqual(['0', '2'])
+      })
+
+      it.each([3, CURRENT_SERVER_CONFIG_VERSION])(
+        'drops a ramp without a step from a v%i file and loads the rest',
+        (version) => {
+          expect(addresses(configFile(version, { value: 0, params: rampWithoutStep }))).toEqual([
+            '2'
+          ])
+        }
+      )
+
+      it.each([3, CURRENT_SERVER_CONFIG_VERSION])(
+        'drops a uint16 ramp with a min of 0.5 and a max of 4.5 from a v%i file and loads the rest',
+        (version) => {
+          expect(
+            addresses(configFile(version, { value: 1, params: rampWithFractionalBounds }))
+          ).toEqual(['2'])
+        }
+      )
+
+      it.each([3, CURRENT_SERVER_CONFIG_VERSION])(
+        'still refuses a v%i file holding an out-of-range min',
+        (version) => {
+          expect(() => migrateServerConfig(configFile(version, outOfRangeMinAt0))).toThrow(
+            'params.min: A uint16 value has to be between 0 and 65535'
+          )
+        }
+      )
+    })
   })
 
   describe('Client Config Migration', () => {

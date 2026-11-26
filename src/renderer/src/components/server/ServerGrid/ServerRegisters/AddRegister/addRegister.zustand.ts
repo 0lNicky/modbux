@@ -2,7 +2,14 @@
 import { MaskSetFn } from '@renderer/context/client.zustand.types'
 import { useServerZustand } from '@renderer/context/server.zustand'
 import { asOneServerUnitStep } from '@renderer/context/serverUndo'
-import { BaseDataType, DataType, NumberRegisters, registerWidth, ServerRegister } from '@shared'
+import {
+  BaseDataType,
+  DataType,
+  GeneratorMode,
+  NumberRegisters,
+  registerWidth,
+  ServerRegister
+} from '@shared'
 import { create } from 'zustand'
 import { mutative } from 'zustand-mutative'
 import {
@@ -63,6 +70,8 @@ interface AddRegisterZustand {
     interval: boolean
     registerLength: boolean
     stringValue: boolean
+    start: boolean
+    step: boolean
   }
   address: string
   addressInUse: boolean
@@ -82,6 +91,14 @@ interface AddRegisterZustand {
   setMax: MaskSetFn
   fixed: boolean
   setFixed: (fixed: boolean) => void
+  generatorMode: GeneratorMode
+  setGeneratorMode: (mode: GeneratorMode) => void
+  start: string
+  setStart: MaskSetFn
+  step: string
+  setStep: MaskSetFn
+  restart: boolean
+  setRestart: (restart: boolean) => void
   stringValue: string
   setStringValue: (stringValue: string) => void
   registerLength: string
@@ -139,7 +156,9 @@ export const useAddRegisterZustand = create<AddRegisterZustand, [['zustand/mutat
       max: true,
       interval: true,
       registerLength: true,
-      stringValue: true
+      stringValue: true,
+      start: true,
+      step: true
     },
 
     address: '0',
@@ -166,6 +185,8 @@ export const useAddRegisterZustand = create<AddRegisterZustand, [['zustand/mutat
         if (['unix', 'datetime'].includes(dataType)) {
           state.value = String(Date.now())
           state.valid.value = true
+          // A timestamp generator reads the clock, so it has nothing to ramp.
+          state.generatorMode = 'random'
         }
 
         const { registerType, address, registerLength } = getState()
@@ -214,6 +235,32 @@ export const useAddRegisterZustand = create<AddRegisterZustand, [['zustand/mutat
     setFixed: (fixed) =>
       set((state) => {
         state.fixed = fixed
+      }),
+
+    generatorMode: 'random',
+    setGeneratorMode: (mode) =>
+      set((state) => {
+        state.generatorMode = mode
+      }),
+
+    start: FIELD_DEFAULTS.start,
+    setStart: (start, valid) =>
+      set((state) => {
+        state.start = start
+        state.valid.start = !!valid
+      }),
+
+    step: FIELD_DEFAULTS.step,
+    setStep: (step, valid) =>
+      set((state) => {
+        state.step = step
+        state.valid.step = !!valid
+      }),
+
+    restart: true,
+    setRestart: (restart) =>
+      set((state) => {
+        state.restart = restart
       }),
 
     stringValue: '',
@@ -312,7 +359,11 @@ export const useAddRegisterZustand = create<AddRegisterZustand, [['zustand/mutat
         interval: form.interval,
         comment: form.comment,
         stringValue: form.stringValue,
-        registerLength: form.registerLength
+        registerLength: form.registerLength,
+        generatorMode: form.generatorMode,
+        start: form.start,
+        step: form.step,
+        restart: form.restart
       })
 
       // Moving an existing register means the old address has to go first: the
@@ -385,6 +436,10 @@ export const useAddRegisterZustand = create<AddRegisterZustand, [['zustand/mutat
         state.interval = FIELD_DEFAULTS.interval
         state.comment = ''
         state.fixed = true
+        state.generatorMode = 'random'
+        state.start = FIELD_DEFAULTS.start
+        state.step = FIELD_DEFAULTS.step
+        state.restart = true
         state.stringValue = ''
         state.registerLength = FIELD_DEFAULTS.registerLength
         state.serverRegisterEdit = undefined
@@ -398,7 +453,9 @@ export const useAddRegisterZustand = create<AddRegisterZustand, [['zustand/mutat
           max: true,
           interval: true,
           registerLength: true,
-          stringValue: true
+          stringValue: true,
+          start: true,
+          step: true
         }
       })
   }))

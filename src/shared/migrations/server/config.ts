@@ -10,6 +10,7 @@ import {
   formatZodError,
   migrateBoolShapeForUnit,
   objectValues,
+  dropRefusedConfigRamps,
   dropUnservableConfigRegisters,
   isRecord,
   parseConfigFile,
@@ -196,6 +197,7 @@ export function migrateServerConfig(raw: string): MigrationResult<ServerConfig> 
     // write after opening such a file folds from the rounded value, which is
     // the defect the v2 to v3 step removes for a v2 file.
     stringifyExact64BitValues({ servers: { config: { registers: parsed.serverRegistersPerUnit } } })
+    dropRefusedConfigRamps(parsed)
     const result = ServerConfigSchema.safeParse(parsed)
     if (!result.success) {
       throw new Error(
@@ -258,6 +260,7 @@ export function migrateServerConfig(raw: string): MigrationResult<ServerConfig> 
   }
 
   // Validate final result
+  dropRefusedConfigRamps(config)
   const result = ServerConfigSchema.safeParse(config)
   if (!result.success) {
     throw new Error(`Migration produced invalid config: ${formatZodError(result.error)}`)
